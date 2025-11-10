@@ -83,10 +83,7 @@ cargo run --release --bin automerge-cli -- <url> add-tag "crdt"
 cargo run --release --bin automerge-cli -- <url> remove-tag "crdt"
 ```
 
-**Collaborators** (`Array<string>`)
-```bash
-cargo run --release --bin automerge-cli -- <url> add-user "RustBot"
-```
+
 
 ### Nested Objects
 
@@ -138,7 +135,7 @@ struct Doc {
     notes: autosurgeon::Text,
     todos: Vec<TodoItem>,
     tags: Vec<autosurgeon::Text>,
-    collaborators: Vec<autosurgeon::Text>,
+
     metadata: Metadata,
     stats: Stats,
 }
@@ -179,9 +176,9 @@ cargo run --release --bin automerge-cli -- <url> show
 Output displays:
 - All scalar values (counter, temperature, dark mode)
 - Text content preview
-- List counts (todos, tags, collaborators)
+- List counts (todos, tags)
 - Metadata (title, edits, active users)
-- Detailed lists (todos with IDs, tags, collaborators)
+- Detailed lists (todos with IDs, tags)
 
 ### All Commands
 
@@ -206,9 +203,6 @@ delete-todo <id>
 # Tags
 add-tag <tag>
 remove-tag <tag>
-
-# Collaborators
-add-user <name>
 
 # View
 show  # Default if no command specified

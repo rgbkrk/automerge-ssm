@@ -61,8 +61,6 @@ enum Command {
     AddTag { tag: String },
     /// Remove a tag
     RemoveTag { tag: String },
-    /// Add a collaborator
-    AddUser { name: String },
     /// Display current document state (default)
     Show,
 }
@@ -166,7 +164,6 @@ struct Doc {
     notes: autosurgeon::Text,
     todos: Vec<TodoItem>,
     tags: Vec<autosurgeon::Text>,
-    collaborators: Vec<autosurgeon::Text>,
     metadata: Metadata,
     stats: Stats,
 }
@@ -197,7 +194,6 @@ impl Doc {
         // Lists
         println!("│ ✓  Todos: {:<28}│", self.todos.len());
         println!("│ 🏷️  Tags: {:<29}│", self.tags.len());
-        println!("│ 👥 Collaborators: {:<22}│", self.collaborators.len());
 
         // Metadata
         if let Some(title) = &self.metadata.title {
@@ -222,10 +218,12 @@ impl Doc {
             println!("\n🏷️  Tags: {}", tags_str.join(", "));
         }
 
-        if !self.collaborators.is_empty() {
-            println!("\n👥 Collaborators:");
-            for user in &self.collaborators {
-                println!("  • {}", user.as_str());
+        if !self.todos.is_empty() {
+            println!("\n✓ Todos:");
+            for todo in &self.todos {
+                let check = if todo.completed { "✓" } else { "○" };
+                let id_short = &todo.id.as_str()[..8.min(todo.id.as_str().len())];
+                println!("  {} [{}] {}", check, id_short, todo.text.as_str());
             }
         }
 
@@ -329,15 +327,6 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                     tracing::debug!("Removed tag: {}", tag);
                 } else {
                     tracing::warn!("Tag '{}' not found", tag);
-                }
-            }
-            Command::AddUser { name } => {
-                if !state.collaborators.iter().any(|n| n.as_str() == name) {
-                    state.collaborators.push(autosurgeon::Text::from(name.as_str()));
-                    state.stats.activeUsers = state.collaborators.len() as i64;
-                    tracing::debug!("Added collaborator: {}", name);
-                } else {
-                    tracing::debug!("User '{}' already exists", name);
                 }
             }
             Command::Show => {

@@ -37,7 +37,6 @@ interface Doc {
   // List types
   todos: TodoItem[];
   tags: string[];
-  collaborators: string[];
 
   // Map/Object type
   metadata: {
@@ -58,7 +57,6 @@ function App() {
   const [doc, setDoc] = useState<Doc | null>(null);
   const [newTodo, setNewTodo] = useState("");
   const [newTag, setNewTag] = useState("");
-  const [newCollaborator, setNewCollaborator] = useState("");
   const [copied, setCopied] = useState(false);
 
   // Helper to safely extract boolean value from darkMode
@@ -116,7 +114,6 @@ function App() {
           d.notes = "";
           d.todos = [];
           d.tags = [];
-          d.collaborators = [];
           d.metadata = {
             createdAt: Date.now(),
             lastModified: Date.now(),
@@ -166,7 +163,6 @@ function App() {
           );
           console.log("currentDoc.todos:", currentDoc.todos);
           console.log("currentDoc.tags:", currentDoc.tags);
-          console.log("currentDoc.collaborators:", currentDoc.collaborators);
           setDoc(currentDoc);
         }
       };
@@ -319,19 +315,6 @@ function App() {
         d.metadata.lastModified = Date.now();
       }
     });
-  };
-
-  const addCollaborator = () => {
-    if (!docHandle || !newCollaborator.trim()) return;
-    docHandle.change((d: Doc) => {
-      if (!d.collaborators) d.collaborators = [];
-      if (!d.collaborators.includes(newCollaborator)) {
-        d.collaborators.push(newCollaborator);
-        if (!d.stats) d.stats = { totalEdits: 0, activeUsers: 0 };
-        d.stats.activeUsers = d.collaborators.length;
-      }
-    });
-    setNewCollaborator("");
   };
 
   const copyUrl = async () => {
@@ -592,51 +575,6 @@ function App() {
           </Card>
 
           {/* Collaborators (List) */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Collaborators</CardTitle>
-              <CardDescription>Active users list</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex gap-2">
-                  <Input
-                    value={newCollaborator}
-                    onChange={(e) => setNewCollaborator(e.target.value)}
-                    placeholder="Add name"
-                    onKeyDown={(e) => e.key === "Enter" && addCollaborator()}
-                  />
-                  <Button
-                    onClick={addCollaborator}
-                    size="icon"
-                    variant="outline"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="space-y-2">
-                  {doc.collaborators && doc.collaborators.length > 0 ? (
-                    doc.collaborators.map((name, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center gap-2 p-2 rounded-md bg-secondary"
-                      >
-                        <div className="h-2 w-2 rounded-full bg-green-500"></div>
-                        <span className="text-sm">{getString(name)}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      No collaborators
-                    </p>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Type: <code>Array&lt;string&gt;</code>
-                </p>
-              </div>
-            </CardContent>
-          </Card>
 
           {/* Metadata (Nested Object) */}
           <Card className="md:col-span-2 lg:col-span-3">
