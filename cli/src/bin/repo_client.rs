@@ -12,9 +12,13 @@ use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
 use clap::{Parser, Subcommand};
 use futures_util::StreamExt;
 use std::convert::Infallible;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::time::sleep;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
+
+// Global counter for unique todo IDs
+static TODO_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Parser)]
 #[command(name = "automerge-cli")]
@@ -200,14 +204,6 @@ impl Doc {
         println!("╰─────────────────────────────────────────╯");
 
         // Details
-        if !self.todos.is_empty() {
-            println!("\n✓ Todos:");
-            for todo in &self.todos {
-                let status = if todo.completed { "✓" } else { "○" };
-                println!("  {} [{}] {}", status, &todo.id[..8], todo.text.as_str());
-            }
-        }
-
         if !self.tags.is_empty() {
             let tags_str: Vec<&str> = self.tags.iter().map(|t| t.as_str()).collect();
             println!("\n🏷️  Tags: {}", tags_str.join(", "));
@@ -275,8 +271,9 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 tracing::debug!("Added note");
             }
             Command::AddTodo { text } => {
+                let counter = TODO_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
                 let todo = TodoItem {
-                    id: format!("{}", chrono::Utc::now().timestamp_millis()),
+                    id: format!("{}-{}", chrono::Utc::now().timestamp_millis(), counter),
                     text: autosurgeon::Text::from(text.as_str()),
                     completed: false,
                 };

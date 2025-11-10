@@ -240,7 +240,7 @@ function App() {
     docHandle.change((d: Doc) => {
       if (!d.todos) d.todos = [];
       d.todos.push({
-        id: Date.now().toString(),
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         text: newTodo,
         completed: false,
       });
