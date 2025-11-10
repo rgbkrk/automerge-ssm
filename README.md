@@ -135,10 +135,10 @@ struct Doc {
     counter: i64,
     temperature: i64,
     darkMode: bool,
-    notes: String,
+    notes: autosurgeon::Text,
     todos: Vec<TodoItem>,
-    tags: Vec<String>,
-    collaborators: Vec<String>,
+    tags: Vec<autosurgeon::Text>,
+    collaborators: Vec<autosurgeon::Text>,
     metadata: Metadata,
     stats: Stats,
 }
@@ -150,6 +150,12 @@ struct Doc {
 - Single `hydrate()` call to read entire document
 - Single `reconcile()` call to write changes
 - No manual type checking or conversion
+
+**String Handling:**
+- Use `autosurgeon::Text` for all string fields to ensure CRDT compatibility
+- `Text` objects serialize as collaborative text in Automerge
+- Prevents `ImmutableString` serialization issues between Rust and JavaScript
+- Access content with `.as_str()`, create with `Text::from()`
 
 ## CLI Usage
 
