@@ -74,6 +74,16 @@ function App() {
     return false;
   };
 
+  // Helper to safely extract string value from ImmutableString
+  // Handles both plain string and {val: string} object formats
+  const getString = (value: unknown): string => {
+    if (typeof value === "string") return value;
+    if (typeof value === "object" && value !== null && "val" in value) {
+      return String((value as { val: unknown }).val);
+    }
+    return String(value || "");
+  };
+
   // Sync darkMode state with document class
   useEffect(() => {
     if (doc?.darkMode) {
@@ -561,10 +571,10 @@ function App() {
                 <div className="flex flex-wrap gap-2">
                   {doc.tags && doc.tags.length > 0 ? (
                     doc.tags.map((tag) => (
-                      <Badge key={tag} variant="secondary">
-                        {tag}
+                      <Badge key={getString(tag)} variant="secondary">
+                        {getString(tag)}
                         <button
-                          onClick={() => removeTag(tag)}
+                          onClick={() => removeTag(getString(tag))}
                           className="ml-2 hover:text-destructive"
                         >
                           ×
@@ -613,7 +623,7 @@ function App() {
                         className="flex items-center gap-2 p-2 rounded-md bg-secondary"
                       >
                         <div className="h-2 w-2 rounded-full bg-green-500"></div>
-                        <span className="text-sm">{String(name)}</span>
+                        <span className="text-sm">{getString(name)}</span>
                       </div>
                     ))
                   ) : (
