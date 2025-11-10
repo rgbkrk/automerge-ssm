@@ -92,11 +92,7 @@ cargo run --release --bin automerge-cli -- <url> remove-tag "crdt"
 - `lastModified`: Timestamp  
 - `title`: String
 
-**Stats** (`Object` with counters)
-- `totalEdits`: Edit counter
-- `activeUsers`: User count
-
-All automatically tracked and synced.
+Automatically synced across all clients.
 
 ## Architecture
 
@@ -135,9 +131,7 @@ struct Doc {
     notes: autosurgeon::Text,
     todos: Vec<TodoItem>,
     tags: Vec<autosurgeon::Text>,
-
     metadata: Metadata,
-    stats: Stats,
 }
 ```
 
@@ -177,7 +171,7 @@ Output displays:
 - All scalar values (counter, temperature, dark mode)
 - Text content preview
 - List counts (todos, tags)
-- Metadata (title, edits, active users)
+- Metadata (title)
 - Detailed lists (todos with IDs, tags)
 
 ### All Commands

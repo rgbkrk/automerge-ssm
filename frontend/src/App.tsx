@@ -40,15 +40,9 @@ interface Doc {
 
   // Map/Object type
   metadata: {
-    createdAt?: number;
-    lastModified?: number;
-    title?: string;
-  };
-
-  // Nested structures
-  stats: {
-    totalEdits: number;
-    activeUsers: number;
+    createdAt: number;
+    lastModified: number;
+    title: string;
   };
 }
 
@@ -118,10 +112,6 @@ function App() {
             createdAt: Date.now(),
             lastModified: Date.now(),
             title: "Autodash Demo",
-          };
-          d.stats = {
-            totalEdits: 0,
-            activeUsers: 0,
           };
         });
         window.location.hash = handle.url;
@@ -204,8 +194,6 @@ function App() {
     if (!docHandle) return;
     docHandle.change((d: Doc) => {
       d.counter = (d.counter || 0) + 1;
-      if (!d.stats) d.stats = { totalEdits: 0, activeUsers: 0 };
-      d.stats.totalEdits++;
       if (!d.metadata) d.metadata = {};
       d.metadata.lastModified = Date.now();
     });
@@ -215,8 +203,6 @@ function App() {
     if (!docHandle) return;
     docHandle.change((d: Doc) => {
       d.counter = (d.counter || 0) - 1;
-      if (!d.stats) d.stats = { totalEdits: 0, activeUsers: 0 };
-      d.stats.totalEdits++;
       if (!d.metadata) d.metadata = {};
       d.metadata.lastModified = Date.now();
     });
@@ -258,8 +244,6 @@ function App() {
         text: newTodo,
         completed: false,
       });
-      if (!d.stats) d.stats = { totalEdits: 0, activeUsers: 0 };
-      d.stats.totalEdits++;
       if (!d.metadata) d.metadata = {};
       d.metadata.lastModified = Date.now();
     });
@@ -585,7 +569,7 @@ function App() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">
                     Title
@@ -604,27 +588,11 @@ function App() {
                       : "—"}
                   </p>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Total Edits
-                  </p>
-                  <p className="text-lg font-semibold">
-                    {doc.stats?.totalEdits || 0}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Active Users
-                  </p>
-                  <p className="text-lg font-semibold">
-                    {doc.stats?.activeUsers || 0}
-                  </p>
-                </div>
               </div>
               <Separator className="my-4" />
               <p className="text-xs text-muted-foreground">
-                Types: <code>Object</code> with <code>number</code> and{" "}
-                <code>string</code> fields
+                Types: <code>Object</code> with <code>number</code> (timestamp)
+                and <code>string</code> fields
               </p>
             </CardContent>
           </Card>

@@ -152,11 +152,7 @@ struct Metadata {
     title: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Reconcile, Hydrate)]
-struct Stats {
-    totalEdits: i64,
-    activeUsers: i64,
-}
+
 
 #[derive(Debug, Clone, Default, Reconcile, Hydrate)]
 struct Doc {
@@ -167,7 +163,6 @@ struct Doc {
     todos: Vec<TodoItem>,
     tags: Vec<autosurgeon::Text>,
     metadata: Metadata,
-    stats: Stats,
 }
 
 impl Doc {
@@ -201,8 +196,6 @@ impl Doc {
         if let Some(title) = &self.metadata.title {
             println!("│ 📄 Title: {:<28}│", title);
         }
-        println!("│ 📊 Total Edits: {:<22}│", self.stats.totalEdits);
-        println!("│ 👤 Active Users: {:<21}│", self.stats.activeUsers);
 
         println!("╰─────────────────────────────────────────╯");
 
@@ -242,19 +235,16 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
         match command {
             Command::Increment => {
                 state.counter += 1;
-                state.stats.totalEdits += 1;
                 state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Incremented counter to {}", state.counter);
             }
             Command::Decrement => {
                 state.counter -= 1;
-                state.stats.totalEdits += 1;
                 state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Decremented counter to {}", state.counter);
             }
             Command::SetCounter { value } => {
                 state.counter = *value;
-                state.stats.totalEdits += 1;
                 state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Set counter to {}", value);
             }
@@ -291,7 +281,6 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                     completed: false,
                 };
                 state.todos.push(todo);
-                state.stats.totalEdits += 1;
                 state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Added todo: {}", text);
             }
