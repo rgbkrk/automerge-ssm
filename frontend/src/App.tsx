@@ -175,7 +175,7 @@ function App() {
                 {doc.collaborators && doc.collaborators.length > 0 ? (
                   doc.collaborators.map((name, idx) => (
                     <span key={idx} className="collaborator-badge">
-                      {name}
+                      {String(name)}
                     </span>
                   ))
                 ) : (
