@@ -42,6 +42,8 @@ cd frontend
 npm install
 ```
 
+**Note:** The project includes `vite-plugin-wasm` and `vite-plugin-top-level-await` to handle Automerge's WebAssembly module loading. These are already configured in `vite.config.ts`.
+
 ### 3. Build Server Dependencies
 
 ```bash
@@ -143,13 +145,16 @@ The frontend is configured to connect to `ws://localhost:3030`. You already have
 2. This Rust demo server (you'll need to change the port if running both)
 
 To change the server URL, edit `frontend/src/App.tsx`:
+### Frontend: Creating a Repo
 
 ```typescript
-const newRepo = new Repo({
-  network: [new BrowserWebSocketClientAdapter("ws://your-server:port")],
+const repo = new Repo({
+  network: [new BrowserWebSocketClientAdapter("ws://localhost:3030")],
   storage: new IndexedDBStorageAdapter(),
 });
 ```
+
+**Note:** Automerge uses WebAssembly. The Vite config includes `vite-plugin-wasm` and `vite-plugin-top-level-await` to handle WASM module loading automatically.
 
 ## Development Notes
 

@@ -108,13 +108,15 @@ npm run dev
 - `@automerge/automerge-repo` - Document management
 - `@automerge/automerge-repo-network-websocket` - Network sync
 - `@automerge/automerge-repo-storage-indexeddb` - Local persistence
+- `vite-plugin-wasm` + `vite-plugin-top-level-await` - WebAssembly support
 
 **How it works:**
-1. Creates an Automerge `Repo` on startup
-2. Connects to `ws://localhost:3030` via `BrowserWebSocketClientAdapter`
-3. Stores documents locally in IndexedDB
-4. Document URL is in the hash fragment (`#automerge:...`)
-5. Real-time UI updates via Automerge's change events
+1. Vite plugins load Automerge's WebAssembly module automatically
+2. Creates an Automerge `Repo` on startup
+3. Connects to `ws://localhost:3030` via `BrowserWebSocketClientAdapter`
+4. Stores documents locally in IndexedDB
+5. Document URL is in the hash fragment (`#automerge:...`)
+6. Real-time UI updates via Automerge's change events
 
 ### Server Stack
 
@@ -167,15 +169,25 @@ interface Doc {
 ### Frontend: Creating a Repo
 
 ```typescript
+// Automerge uses WebAssembly - Vite plugins handle loading automatically
 const repo = new Repo({
   network: [new BrowserWebSocketClientAdapter("ws://localhost:3030")],
   storage: new IndexedDBStorageAdapter(),
 });
 ```
 
+**Note:** The `vite.config.ts` includes `wasm()` and `topLevelAwait()` plugins to handle Automerge's WebAssembly module loading.
+
 ### Frontend: Making Changes
 
 ```typescript
+// Subscribe to document changes
+handle.on("change", () => {
+  const currentDoc = handle.doc();
+  setDoc(currentDoc);
+});
+
+// Make changes to the document
 docHandle.change((d: Doc) => {
   d.counter = (d.counter || 0) + 1;
 });
@@ -247,6 +259,28 @@ The demo server implements a simple protocol:
 
 ## Troubleshooting
 
+### WebAssembly Loading Error
+
+**Error:** `"ESM integration proposal for Wasm" is not supported currently`
+
+**Solution:** This is already fixed! The project includes `vite-plugin-wasm` and `vite-plugin-top-level-await`. If you see this error:
+
+1. Make sure dependencies are installed:
+```bash
+cd frontend
+npm install
+```
+
+2. Verify `vite.config.ts` includes the plugins:
+```typescript
+import wasm from "vite-plugin-wasm";
+import topLevelAwait from "vite-plugin-top-level-await";
+
+export default defineConfig({
+  plugins: [react(), wasm(), topLevelAwait()],
+});
+```
+
 ### Server won't start
 ```bash
 # Check if port is in use
@@ -257,14 +291,20 @@ kill -9 <PID>
 ```
 
 ### Frontend won't connect
-- Verify server is running: `curl http://localhost:3030`
+- Verify the server is running
 - Check browser console for WebSocket errors
-- Ensure no firewall blocking localhost connections
+- Ensure the WebSocket URL is correct
+
+### API Deprecation Warnings
+
+**Warning:** `docSync is deprecated. Use doc() instead`
+
+This is expected - the code already uses the newer `doc()` API. The warning may appear from internal library code and can be ignored.
 
 ### Changes not syncing
-- Check Network tab in browser DevTools
-- Look for WebSocket connection status
-- Verify both clients are on the same document URL
+- Check that both server and frontend are running
+- Look for errors in server logs and browser console
+- Try refreshing the page
 
 ### Data not persisting
 - Check browser settings (ensure IndexedDB is enabled)
