@@ -14,6 +14,7 @@
 use anyhow::{Context, Result};
 use automerge::{transaction::Transactable, AutoCommit, ObjType, ReadDoc};
 use futures_util::{SinkExt, StreamExt};
+use serde_json;
 use std::time::Duration;
 use tokio::time::timeout;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -206,13 +207,45 @@ async fn main() -> Result<()> {
 
     info!("📡 Connected! Document ID: {}", doc_id);
 
-    // Create or load document
-    let mut doc = AutoCommit::new();
+    // Request the existing document from the server
+    info!("📥 Requesting existing document from server...");
+    let request = serde_json::json!({
+        "type": "get",
+        "doc_id": doc_id
+    });
+    write.send(Message::Text(request.to_string())).await?;
 
-    // Initialize with basic structure
-    doc.put(automerge::ROOT, "counter", 0_i64)?;
-    doc.put(automerge::ROOT, "notes", "")?;
-    doc.put_object(automerge::ROOT, "collaborators", ObjType::List)?;
+    // Wait for the document response
+    let mut doc = match timeout(Duration::from_secs(3), read.next()).await {
+        Ok(Some(Ok(Message::Binary(data)))) if data.len() > 36 => {
+            let doc_bytes = &data[36..];
+            match AutoCommit::load(doc_bytes) {
+                Ok(loaded_doc) => {
+                    info!("✅ Loaded existing document from server");
+                    loaded_doc
+                }
+                Err(e) => {
+                    info!("⚠️  Could not load document ({}), creating new one", e);
+                    let mut new_doc = AutoCommit::new();
+                    new_doc.put(automerge::ROOT, "counter", 0_i64)?;
+                    new_doc.put(automerge::ROOT, "notes", "")?;
+                    new_doc.put_object(automerge::ROOT, "collaborators", ObjType::List)?;
+                    new_doc
+                }
+            }
+        }
+        _ => {
+            info!("⚠️  No existing document found, creating new one");
+            let mut new_doc = AutoCommit::new();
+            new_doc.put(automerge::ROOT, "counter", 0_i64)?;
+            new_doc.put(automerge::ROOT, "notes", "")?;
+            new_doc.put_object(automerge::ROOT, "collaborators", ObjType::List)?;
+            new_doc
+        }
+    };
+
+    info!("📄 Current document state before changes:");
+    display_document(&doc);
 
     // Execute the command
     execute_command(&mut doc, &command).await?;
