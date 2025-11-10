@@ -653,7 +653,7 @@ function App() {
                     Title
                   </p>
                   <p className="text-lg font-semibold">
-                    {doc.metadata?.title || "Untitled"}
+                    {getString(doc.metadata?.title) || "Untitled"}
                   </p>
                 </div>
                 <div>

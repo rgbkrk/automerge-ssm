@@ -142,47 +142,7 @@ fn hydrate_optional_string_or_text<D: autosurgeon::ReadDoc>(
     }
 }
 
-// Helper function to hydrate Vec<String> that might contain Text objects (from JS)
-fn hydrate_string_vec_or_text<D: autosurgeon::ReadDoc>(
-    doc: &D,
-    obj: &automerge::ObjId,
-    prop: autosurgeon::Prop,
-) -> Result<Vec<String>, autosurgeon::HydrateError> {
-    use automerge::{ObjType, Value};
 
-    tracing::debug!("hydrate_string_vec_or_text: prop={:?}", prop);
-    match doc.get(obj, &prop)? {
-        Some((Value::Object(ObjType::List), list_obj)) => {
-            let len = doc.length(&list_obj);
-            let mut result = Vec::new();
-
-            for i in 0..len {
-                match doc.get(&list_obj, i)? {
-                    Some((Value::Scalar(s), _)) => {
-                        if let Some(text) = s.to_str() {
-                            result.push(text.to_string());
-                        }
-                    }
-                    Some((Value::Object(ObjType::Text), text_obj)) => {
-                        if let Ok(text) = doc.text(&text_obj) {
-                            result.push(text);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            Ok(result)
-        }
-        None => {
-            tracing::debug!("hydrate_string_vec_or_text: prop={:?} is None, returning empty vec", prop);
-            Ok(Vec::new())
-        }
-        Some((val, _)) => {
-            tracing::error!("hydrate_string_vec_or_text: unexpected value type for prop={:?}, val={:?}", prop, val);
-            Err(autosurgeon::HydrateError::unexpected("list", format!("{:?}", val)))
-        }
-    }
-}
 
 #[derive(Debug, Clone, Default, Reconcile, Hydrate)]
 struct Metadata {
@@ -205,10 +165,8 @@ struct Doc {
     darkMode: bool,
     notes: autosurgeon::Text,
     todos: Vec<TodoItem>,
-    #[autosurgeon(hydrate = "hydrate_string_vec_or_text")]
-    tags: Vec<String>,
-    #[autosurgeon(hydrate = "hydrate_string_vec_or_text")]
-    collaborators: Vec<String>,
+    tags: Vec<autosurgeon::Text>,
+    collaborators: Vec<autosurgeon::Text>,
     metadata: Metadata,
     stats: Stats,
 }
@@ -260,13 +218,14 @@ impl Doc {
         }
 
         if !self.tags.is_empty() {
-            println!("\n🏷️  Tags: {}", self.tags.join(", "));
+            let tags_str: Vec<&str> = self.tags.iter().map(|t| t.as_str()).collect();
+            println!("\n🏷️  Tags: {}", tags_str.join(", "));
         }
 
         if !self.collaborators.is_empty() {
             println!("\n👥 Collaborators:");
             for user in &self.collaborators {
-                println!("  • {}", user);
+                println!("  • {}", user.as_str());
             }
         }
 
@@ -355,8 +314,8 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 }
             }
             Command::AddTag { tag } => {
-                if !state.tags.contains(tag) {
-                    state.tags.push(tag.clone());
+                if !state.tags.iter().any(|t| t.as_str() == tag) {
+                    state.tags.push(autosurgeon::Text::from(tag.as_str()));
                     state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                     tracing::debug!("Added tag: {}", tag);
                 } else {
@@ -364,7 +323,7 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 }
             }
             Command::RemoveTag { tag } => {
-                if let Some(pos) = state.tags.iter().position(|t| t == tag) {
+                if let Some(pos) = state.tags.iter().position(|t| t.as_str() == tag) {
                     state.tags.remove(pos);
                     state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                     tracing::debug!("Removed tag: {}", tag);
@@ -373,8 +332,8 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 }
             }
             Command::AddUser { name } => {
-                if !state.collaborators.contains(name) {
-                    state.collaborators.push(name.clone());
+                if !state.collaborators.iter().any(|n| n.as_str() == name) {
+                    state.collaborators.push(autosurgeon::Text::from(name.as_str()));
                     state.stats.activeUsers = state.collaborators.len() as i64;
                     tracing::debug!("Added collaborator: {}", name);
                 } else {
