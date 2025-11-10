@@ -94,6 +94,19 @@ let bytes = doc.save();
 let loaded = AutoCommit::load(&bytes)?;
 ```
 
+## Development
+
+### Type Checking
+
+Run TypeScript type checking before committing:
+
+```bash
+cd frontend
+npm run type-check
+```
+
+This catches type errors early and ensures code quality.
+
 ## Common Issues
 
 ### "ESM integration proposal for Wasm"
@@ -116,6 +129,7 @@ kill -9 <PID>
 - Read `DEMO.md` for in-depth explanations
 - Check `server/examples/simple_client.rs` for Rust examples
 - Explore the `frontend/src/App.tsx` to see how the UI works
+- Run `npm run type-check` in frontend/ to validate TypeScript
 
 ## Key Concepts (30 Second Version)
 
