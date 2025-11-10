@@ -13,7 +13,7 @@ A minimal example of real-time collaborative editing using Automerge, demonstrat
 
 ```bash
 # Terminal 1: Sync server
-npx @automerge/automerge-repo-sync-server
+pnpx @automerge/automerge-repo-sync-server
 
 # Terminal 2: Frontend
 cd frontend && npm install && npm run dev
