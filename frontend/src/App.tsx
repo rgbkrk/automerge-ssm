@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Repo } from "@automerge/automerge-repo";
+import { Repo, DocHandle, type AutomergeUrl } from "@automerge/automerge-repo";
 import { BrowserWebSocketClientAdapter } from "@automerge/automerge-repo-network-websocket";
 import { IndexedDBStorageAdapter } from "@automerge/automerge-repo-storage-indexeddb";
-import { next as Automerge } from "@automerge/automerge";
+
 import "./App.css";
 
 interface Doc {
@@ -12,43 +12,44 @@ interface Doc {
 }
 
 function App() {
-  const [repo, setRepo] = useState<Repo | null>(null);
-  const [docHandle, setDocHandle] = useState<any>(null);
+  const [docHandle, setDocHandle] = useState<DocHandle<Doc> | null>(null);
   const [doc, setDoc] = useState<Doc | null>(null);
   const [username, setUsername] = useState("");
   const [tempUsername, setTempUsername] = useState("");
 
   useEffect(() => {
-    // Initialize repo
-    const newRepo = new Repo({
-      network: [new BrowserWebSocketClientAdapter("ws://localhost:3030")],
-      storage: new IndexedDBStorageAdapter(),
-    });
+    let cleanup: (() => void) | null = null;
 
-    setRepo(newRepo);
-
-    // Get or create document
-    const hash = window.location.hash.slice(1);
-    let handle;
-
-    if (hash) {
-      // Load existing document
-      handle = newRepo.find(hash);
-    } else {
-      // Create new document
-      handle = newRepo.create<Doc>();
-      handle.change((d: any) => {
-        d.counter = 0;
-        d.notes = "";
-        d.collaborators = [];
+    const initRepo = async () => {
+      // Initialize repo
+      const repo = new Repo({
+        network: [new BrowserWebSocketClientAdapter("ws://localhost:3030")],
+        storage: new IndexedDBStorageAdapter(),
       });
-      window.location.hash = handle.url;
-    }
 
-    setDocHandle(handle);
+      // Get or create document
+      const hash = window.location.hash.slice(1);
+      let handle;
 
-    // Subscribe to changes and load initial state
-    handle.whenReady().then(() => {
+      if (hash) {
+        // Load existing document - find returns a Promise
+        handle = await repo.find<Doc>(hash as AutomergeUrl);
+      } else {
+        // Create new document - create returns DocHandle directly
+        handle = repo.create<Doc>();
+        handle.change((d: Doc) => {
+          d.counter = 0;
+          d.notes = "";
+          d.collaborators = [];
+        });
+        window.location.hash = handle.url;
+      }
+
+      setDocHandle(handle);
+
+      // Wait for handle to be ready
+      await handle.whenReady();
+
       const updateDoc = () => {
         const currentDoc = handle.doc();
         if (currentDoc) {
@@ -59,16 +60,20 @@ function App() {
       // Initial load
       updateDoc();
 
-      // Subscribe to changes using the document's change handler
-      const unsubscribe = handle.on("change", () => {
+      // Subscribe to changes
+      const changeListener = () => {
         updateDoc();
-      });
+      };
+      handle.on("change", changeListener);
+      cleanup = () => {
+        handle.off("change", changeListener);
+      };
+    };
 
-      return unsubscribe;
-    });
+    initRepo().catch(console.error);
 
     return () => {
-      // Cleanup will be handled by the promise
+      if (cleanup) cleanup();
     };
   }, []);
 
