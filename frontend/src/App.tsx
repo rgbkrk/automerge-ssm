@@ -68,9 +68,8 @@ function App() {
     if (typeof value === "boolean") return value;
     if (typeof value === "object" && "val" in value) {
       console.log("darkMode is an object:", value);
-      return Boolean(value.val);
+      return Boolean((value as { val: unknown }).val);
     }
-    console.warn("Unexpected darkMode format:", value);
     return false;
   };
 

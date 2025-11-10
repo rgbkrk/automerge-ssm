@@ -204,8 +204,7 @@ struct Doc {
     counter: i64,
     temperature: i64,
     darkMode: bool,
-    #[autosurgeon(hydrate = "hydrate_string_or_text")]
-    notes: String,
+    notes: autosurgeon::Text,
     todos: Vec<TodoItem>,
     #[autosurgeon(hydrate = "hydrate_string_vec_or_text")]
     tags: Vec<String>,
@@ -226,13 +225,14 @@ impl Doc {
         println!("│ 🌙 Dark Mode: {:<26}│", if self.darkMode { "ON" } else { "OFF" });
 
         // Text
-        if self.notes.is_empty() {
+        let notes_str = self.notes.as_str();
+        if notes_str.is_empty() {
             println!("│ 📝 Notes: (empty){:<23}│", "");
         } else {
-            let preview = if self.notes.len() > 30 {
-                format!("{}...", &self.notes[..27])
+            let preview = if notes_str.len() > 30 {
+                format!("{}...", &notes_str[..27])
             } else {
-                self.notes.clone()
+                notes_str.to_string()
             };
             println!("│ 📝 Notes: {:<28}│", preview);
         }
@@ -317,10 +317,11 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 tracing::debug!("Set dark mode to {}", enabled);
             }
             Command::AddNote { text } => {
-                if state.notes.is_empty() {
-                    state.notes = text.clone();
+                let current = state.notes.as_str();
+                if current.is_empty() {
+                    state.notes = autosurgeon::Text::from(text.as_str());
                 } else {
-                    state.notes = format!("{}\n{}", state.notes, text);
+                    state.notes = autosurgeon::Text::from(format!("{}\n{}", current, text));
                 }
                 state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Added note");
