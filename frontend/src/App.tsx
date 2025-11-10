@@ -39,10 +39,10 @@ interface Doc {
   tags: string[];
 
   // Map/Object type
-  metadata: {
-    createdAt: number;
-    lastModified: number;
-    title: string;
+  metadata?: {
+    createdAt?: number;
+    lastModified?: number;
+    title?: string;
   };
 }
 
