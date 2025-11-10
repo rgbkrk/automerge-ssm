@@ -69,15 +69,127 @@ enum Command {
 
 #[derive(Debug, Clone, Reconcile, Hydrate)]
 struct TodoItem {
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
     id: String,
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
     text: String,
     completed: bool,
+}
+
+// Helper function to hydrate strings that might be stored as Text objects (from JS)
+// or as scalar strings (from Rust)
+fn hydrate_string_or_text<D: autosurgeon::ReadDoc>(
+    doc: &D,
+    obj: &automerge::ObjId,
+    prop: autosurgeon::Prop,
+) -> Result<String, autosurgeon::HydrateError> {
+    use automerge::{ObjType, Value};
+
+    tracing::debug!("hydrate_string_or_text: prop={:?}", prop);
+    match doc.get(obj, &prop)? {
+        Some((Value::Scalar(s), _)) => {
+            // Scalar string - direct case
+            Ok(s.to_str()
+                .ok_or_else(|| autosurgeon::HydrateError::unexpected("string", format!("scalar {:?}", s)))?
+                .to_string())
+        }
+        Some((Value::Object(ObjType::Text), text_obj)) => {
+            // Text object - from JavaScript
+            doc.text(&text_obj).map_err(|e| {
+                autosurgeon::HydrateError::unexpected("text object", format!("error reading text: {}", e))
+            })
+        }
+        Some((val, _)) => {
+            tracing::error!("hydrate_string_or_text: unexpected value type for prop={:?}, val={:?}", prop, val);
+            Err(autosurgeon::HydrateError::unexpected("string or text", format!("{:?}", val)))
+        }
+        None => {
+            tracing::debug!("hydrate_string_or_text: prop={:?} is None, returning empty string", prop);
+            Ok(String::new())
+        }
+    }
+}
+
+// Helper function to hydrate Option<String> that might be stored as Text object (from JS)
+fn hydrate_optional_string_or_text<D: autosurgeon::ReadDoc>(
+    doc: &D,
+    obj: &automerge::ObjId,
+    prop: autosurgeon::Prop,
+) -> Result<Option<String>, autosurgeon::HydrateError> {
+    use automerge::{ObjType, Value};
+
+    tracing::debug!("hydrate_optional_string_or_text: prop={:?}", prop);
+    match doc.get(obj, &prop)? {
+        Some((Value::Scalar(s), _)) => {
+            // Scalar string - direct case
+            Ok(Some(s.to_str()
+                .ok_or_else(|| autosurgeon::HydrateError::unexpected("string", format!("scalar {:?}", s)))?
+                .to_string()))
+        }
+        Some((Value::Object(ObjType::Text), text_obj)) => {
+            // Text object - from JavaScript
+            doc.text(&text_obj).map(Some).map_err(|e| {
+                autosurgeon::HydrateError::unexpected("text object", format!("error reading text: {}", e))
+            })
+        }
+        Some((val, _)) => {
+            tracing::error!("hydrate_optional_string_or_text: unexpected value type for prop={:?}, val={:?}", prop, val);
+            Err(autosurgeon::HydrateError::unexpected("string or text", format!("{:?}", val)))
+        }
+        None => {
+            tracing::debug!("hydrate_optional_string_or_text: prop={:?} is None", prop);
+            Ok(None)
+        }
+    }
+}
+
+// Helper function to hydrate Vec<String> that might contain Text objects (from JS)
+fn hydrate_string_vec_or_text<D: autosurgeon::ReadDoc>(
+    doc: &D,
+    obj: &automerge::ObjId,
+    prop: autosurgeon::Prop,
+) -> Result<Vec<String>, autosurgeon::HydrateError> {
+    use automerge::{ObjType, Value};
+
+    tracing::debug!("hydrate_string_vec_or_text: prop={:?}", prop);
+    match doc.get(obj, &prop)? {
+        Some((Value::Object(ObjType::List), list_obj)) => {
+            let len = doc.length(&list_obj);
+            let mut result = Vec::new();
+
+            for i in 0..len {
+                match doc.get(&list_obj, i)? {
+                    Some((Value::Scalar(s), _)) => {
+                        if let Some(text) = s.to_str() {
+                            result.push(text.to_string());
+                        }
+                    }
+                    Some((Value::Object(ObjType::Text), text_obj)) => {
+                        if let Ok(text) = doc.text(&text_obj) {
+                            result.push(text);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(result)
+        }
+        None => {
+            tracing::debug!("hydrate_string_vec_or_text: prop={:?} is None, returning empty vec", prop);
+            Ok(Vec::new())
+        }
+        Some((val, _)) => {
+            tracing::error!("hydrate_string_vec_or_text: unexpected value type for prop={:?}, val={:?}", prop, val);
+            Err(autosurgeon::HydrateError::unexpected("list", format!("{:?}", val)))
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Reconcile, Hydrate)]
 struct Metadata {
     createdAt: Option<i64>,
     lastModified: Option<i64>,
+    #[autosurgeon(hydrate = "hydrate_optional_string_or_text")]
     title: Option<String>,
 }
 
@@ -92,9 +204,12 @@ struct Doc {
     counter: i64,
     temperature: i64,
     darkMode: bool,
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
     notes: String,
     todos: Vec<TodoItem>,
+    #[autosurgeon(hydrate = "hydrate_string_vec_or_text")]
     tags: Vec<String>,
+    #[autosurgeon(hydrate = "hydrate_string_vec_or_text")]
     collaborators: Vec<String>,
     metadata: Metadata,
     stats: Stats,
@@ -161,9 +276,9 @@ impl Doc {
 }
 
 async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Result<()> {
-    doc_handle.with_document(|doc| {
+    doc_handle.with_document(|doc| -> Result<()> {
         // Hydrate current state from document
-        let mut state: Doc = hydrate(doc).unwrap_or_default();
+        let mut state: Doc = hydrate(doc).context("Failed to hydrate document state")?;
 
         // Apply command to local state
         match command {
@@ -274,8 +389,11 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
         // Reconcile changes back to document
         doc.transact(|tx| {
             reconcile(tx, &state)
-        }).expect("Failed to reconcile document");
-    });
+        })
+        .map_err(|e| anyhow::anyhow!("Failed to reconcile document: {:?}", e))?;
+
+        Ok(())
+    })?;
 
     Ok(())
 }
@@ -421,8 +539,18 @@ async fn main() -> Result<()> {
     }
 
     let doc_data: Doc = doc_handle.with_document(|doc| {
-        hydrate(doc).unwrap_or_default()
-    });
+        tracing::debug!("Attempting to hydrate document...");
+        match hydrate(doc) {
+            Ok(data) => {
+                tracing::debug!("Successfully hydrated document");
+                Ok(data)
+            }
+            Err(e) => {
+                tracing::error!("Failed to hydrate document: {:?}", e);
+                Err(anyhow::anyhow!("Failed to hydrate document for display: {:?}", e))
+            }
+        }
+    })?;
 
     doc_data.display();
 
@@ -432,8 +560,8 @@ async fn main() -> Result<()> {
 
         println!("\n📄 After:");
         let doc_data: Doc = doc_handle.with_document(|doc| {
-            hydrate(doc).unwrap_or_default()
-        });
+            hydrate(doc).context("Failed to hydrate document after command")
+        })?;
         doc_data.display();
     }
 
