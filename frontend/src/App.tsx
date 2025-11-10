@@ -61,6 +61,28 @@ function App() {
   const [newCollaborator, setNewCollaborator] = useState("");
   const [copied, setCopied] = useState(false);
 
+  // Helper to safely extract boolean value from darkMode
+  // Handles both plain boolean and {val: boolean} object formats
+  const getDarkMode = (value: unknown): boolean => {
+    if (value === null || value === undefined) return false;
+    if (typeof value === "boolean") return value;
+    if (typeof value === "object" && "val" in value) {
+      console.log("darkMode is an object:", value);
+      return Boolean(value.val);
+    }
+    console.warn("Unexpected darkMode format:", value);
+    return false;
+  };
+
+  // Sync darkMode state with document class
+  useEffect(() => {
+    if (doc?.darkMode) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [doc?.darkMode]);
+
   useEffect(() => {
     let cleanup: (() => void) | null = null;
 
@@ -126,6 +148,20 @@ function App() {
       if (cleanup) cleanup();
     };
   }, []);
+
+  // Sync darkMode state with document class
+  useEffect(() => {
+    const darkModeValue = getDarkMode(doc?.darkMode);
+    console.log("darkMode sync effect:", {
+      raw: doc?.darkMode,
+      parsed: darkModeValue,
+    });
+    if (darkModeValue) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [doc?.darkMode]);
 
   const incrementCounter = () => {
     if (!docHandle) return;
@@ -369,14 +405,16 @@ function App() {
             </CardHeader>
             <CardContent>
               <div className="flex flex-col items-center justify-center space-y-4 py-4">
-                <div className="text-4xl">{doc.darkMode ? "🌙" : "☀️"}</div>
+                <div className="text-4xl">
+                  {getDarkMode(doc.darkMode) ? "🌙" : "☀️"}
+                </div>
                 <div className="flex items-center space-x-2">
                   <Switch
-                    checked={doc.darkMode || false}
+                    checked={getDarkMode(doc.darkMode)}
                     onCheckedChange={toggleDarkMode}
                   />
                   <span className="text-sm font-medium">
-                    {doc.darkMode ? "Dark" : "Light"}
+                    {getDarkMode(doc.darkMode) ? "Dark" : "Light"}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground text-center">
