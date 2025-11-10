@@ -524,7 +524,7 @@ function App() {
                               : ""
                           }`}
                         >
-                          {todo.text}
+                          {getString(todo.text)}
                         </span>
                         <Button
                           variant="ghost"

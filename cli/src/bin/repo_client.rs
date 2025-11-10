@@ -71,8 +71,7 @@ enum Command {
 struct TodoItem {
     #[autosurgeon(hydrate = "hydrate_string_or_text")]
     id: String,
-    #[autosurgeon(hydrate = "hydrate_string_or_text")]
-    text: String,
+    text: autosurgeon::Text,
     completed: bool,
 }
 
@@ -256,7 +255,7 @@ impl Doc {
             println!("\n✓ Todos:");
             for todo in &self.todos {
                 let status = if todo.completed { "✓" } else { "○" };
-                println!("  {} [{}] {}", status, &todo.id[..8], todo.text);
+                println!("  {} [{}] {}", status, &todo.id[..8], todo.text.as_str());
             }
         }
 
@@ -329,7 +328,7 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
             Command::AddTodo { text } => {
                 let todo = TodoItem {
                     id: format!("{}", chrono::Utc::now().timestamp_millis()),
-                    text: text.clone(),
+                    text: autosurgeon::Text::from(text.as_str()),
                     completed: false,
                 };
                 state.todos.push(todo);
