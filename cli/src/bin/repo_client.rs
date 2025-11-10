@@ -73,7 +73,7 @@ enum Command {
 
 #[derive(Debug, Clone, Reconcile, Hydrate)]
 struct TodoItem {
-    id: autosurgeon::Text,
+    id: String,
     text: autosurgeon::Text,
     completed: bool,
 }
@@ -212,7 +212,7 @@ impl Doc {
             println!("\n✓ Todos:");
             for todo in &self.todos {
                 let check = if todo.completed { "✓" } else { "○" };
-                let id_short = &todo.id.as_str()[..8.min(todo.id.as_str().len())];
+                let id_short = &todo.id[..8.min(todo.id.len())];
                 println!("  {} [{}] {}", check, id_short, todo.text.as_str());
             }
         }
@@ -272,7 +272,7 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
             Command::AddTodo { text } => {
                 let counter = TODO_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
                 let todo = TodoItem {
-                    id: autosurgeon::Text::from(&format!("{}-{}", chrono::Utc::now().timestamp_millis(), counter)),
+                    id: format!("{}-{}", chrono::Utc::now().timestamp_millis(), counter),
                     text: autosurgeon::Text::from(text.as_str()),
                     completed: false,
                 };
@@ -281,7 +281,7 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 tracing::debug!("Added todo: {}", text);
             }
             Command::ToggleTodo { id } => {
-                if let Some(todo) = state.todos.iter_mut().find(|t| t.id.as_str().starts_with(id)) {
+                if let Some(todo) = state.todos.iter_mut().find(|t| t.id.starts_with(id)) {
                     todo.completed = !todo.completed;
                     state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                     tracing::debug!("Toggled todo {}", id);
@@ -290,7 +290,7 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 }
             }
             Command::DeleteTodo { id } => {
-                if let Some(pos) = state.todos.iter().position(|t| t.id.as_str().starts_with(id)) {
+                if let Some(pos) = state.todos.iter().position(|t| t.id.starts_with(id)) {
                     state.todos.remove(pos);
                     state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                     tracing::debug!("Deleted todo {}", id);

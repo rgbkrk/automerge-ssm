@@ -253,7 +253,7 @@ function App() {
   const toggleTodo = (id: string) => {
     if (!docHandle) return;
     docHandle.change((d: Doc) => {
-      const todo = d.todos?.find((t) => t.id === id);
+      const todo = d.todos?.find((t) => getString(t.id) === id);
       if (todo) {
         todo.completed = !todo.completed;
         if (!d.metadata) d.metadata = {};
@@ -266,7 +266,7 @@ function App() {
     if (!docHandle) return;
     docHandle.change((d: Doc) => {
       if (!d.todos) return;
-      const index = d.todos.findIndex((t) => t.id === id);
+      const index = d.todos.findIndex((t) => getString(t.id) === id);
       if (index !== -1) {
         d.todos.splice(index, 1);
         if (!d.metadata) d.metadata = {};
@@ -477,12 +477,12 @@ function App() {
                   {doc.todos && doc.todos.length > 0 ? (
                     doc.todos.map((todo) => (
                       <div
-                        key={todo.id}
+                        key={getString(todo.id)}
                         className="flex items-center gap-2 p-2 rounded-md border"
                       >
                         <Checkbox
                           checked={todo.completed}
-                          onCheckedChange={() => toggleTodo(todo.id)}
+                          onCheckedChange={() => toggleTodo(getString(todo.id))}
                         />
                         <span
                           className={`flex-1 text-sm ${
@@ -496,7 +496,7 @@ function App() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => deleteTodo(todo.id)}
+                          onClick={() => deleteTodo(getString(todo.id))}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
