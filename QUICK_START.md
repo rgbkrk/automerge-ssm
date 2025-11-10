@@ -1,142 +1,135 @@
 # Quick Start Guide
 
+Get the Automerge collaborative demo running in 5 minutes!
+
 ## Prerequisites
 
 - Node.js 18+
 - Rust (latest stable)
+- A sync server on `localhost:3030`
 
-## 1. Start the Demo (Easy Way)
+## Step 1: Start a Sync Server
+
+You need an automerge-repo sync server. The easiest way:
 
 ```bash
-./start-demo.sh
+npx @automerge/automerge-repo-sync-server
 ```
 
-This starts both the server and frontend automatically.
+This will start on `ws://localhost:3030`
 
-## 2. Start Manually
+## Step 2: Start the Frontend
 
-**Terminal 1 - Server:**
-```bash
-cd server
-cargo run
-```
-
-**Terminal 2 - Frontend:**
 ```bash
 cd frontend
-npm install  # First time only
+npm install
 npm run dev
 ```
 
-## 3. Try It Out
+Open http://localhost:5173 in your browser.
 
-1. Open `http://localhost:5173` in your browser
-2. Enter a username to join
-3. A document URL will appear in the address bar (something like `#automerge:...`)
-4. Copy that URL and open it in another tab/browser
-5. Make changes in one tab, watch them sync to the other!
+## Step 3: Try the Demo
 
-## What to Try
+In your browser:
+1. Enter a username (e.g., "WebUser")
+2. Click the counter buttons
+3. Type in the notes field
+4. Copy the URL - it contains your document ID!
 
-### Real-time Collaboration
-- Click the counter buttons in multiple tabs
-- Type in the shared notes simultaneously
-- Watch changes sync instantly
-
-### Offline Mode
-- Disconnect your network
-- Make changes (they're saved locally)
-- Reconnect - changes sync automatically
-
-### Share & Collaborate
-- Click "📋 Copy Share Link"
-- Send it to someone else
-- Both of you can edit simultaneously
-
-## Quick API Reference
-
-### Frontend - Making Changes
-
-```typescript
-// Increment counter
-docHandle.change((d) => {
-  d.counter = (d.counter || 0) + 1;
-});
-
-// Update text
-docHandle.change((d) => {
-  d.notes = "New text";
-});
-
-// Add to array
-docHandle.change((d) => {
-  d.collaborators.push("Alice");
-});
+Example URL:
+```
+http://localhost:5173/#automerge:2mdM9TnM2sJgLhHhYjyBzfusSsyr
 ```
 
-### Rust - Working with Documents
+## Step 4: Use the Rust CLI
 
-```rust
-use automerge::{AutoCommit, ObjType};
-use automerge::transaction::Transactable;
-
-// Create document
-let mut doc = AutoCommit::new();
-
-// Make changes
-doc.put(automerge::ROOT, "counter", 0_i64)?;
-doc.put(automerge::ROOT, "notes", "Hello")?;
-
-// Save to bytes
-let bytes = doc.save();
-
-// Load from bytes
-let loaded = AutoCommit::load(&bytes)?;
-```
-
-## Development
-
-### Type Checking
-
-Run TypeScript type checking before committing:
+Now the magic part - modify the same document from Rust!
 
 ```bash
-cd frontend
-npm run type-check
+# In a new terminal
+cd server
+
+# Build the CLI (first time only)
+cargo build --release
+
+# Use your document URL from the browser
+cargo run --release --bin automerge-cli -- \
+  automerge:2mdM9TnM2sJgLhHhYjyBzfusSsyr increment
 ```
 
-This catches type errors early and ensures code quality.
+**Watch your browser** - the counter increments instantly! 🎉
 
-## Common Issues
+### More CLI Commands
 
-### "ESM integration proposal for Wasm"
-Already fixed! Just run `npm install` in the frontend directory.
-
-### Port already in use
 ```bash
-# Kill process on port 3030
-lsof -i :3030
-kill -9 <PID>
+# Add a note
+cargo run --release --bin automerge-cli -- \
+  automerge:YOUR_DOC_ID add-note "Hello from Rust!"
+
+# Add a collaborator
+cargo run --release --bin automerge-cli -- \
+  automerge:YOUR_DOC_ID add-user "RustUser"
+
+# Set counter to specific value
+cargo run --release --bin automerge-cli -- \
+  automerge:YOUR_DOC_ID set-counter 42
+
+# Just view the document
+cargo run --release --bin automerge-cli -- \
+  automerge:YOUR_DOC_ID show
 ```
 
-### Changes not syncing
-- Ensure server is running (`cargo run` in server directory)
-- Check browser console for errors
-- Refresh the page
+## What's Happening?
+
+```
+┌─────────┐                     ┌─────────┐                     ┌─────────┐
+│ Browser │ ◄── WebSocket  ───► │  Sync   │ ◄── WebSocket  ───► │ Rust    │
+│         │  Automerge Sync     │ Server  │  Automerge Sync     │  CLI    │
+└─────────┘                     └─────────┘                     └─────────┘
+```
+
+Both the browser and Rust CLI:
+- Connect to the same sync server
+- Use the automerge-repo protocol
+- See each other's changes in real-time
+- Can work offline and sync later
+
+## Try Multi-User
+
+1. Open the document URL in multiple browser tabs
+2. Run the CLI in multiple terminals
+3. Watch changes sync across all clients instantly!
+
+## Troubleshooting
+
+**Port 3030 in use?**
+- Kill existing process: `lsof -i :3030` then `kill <PID>`
+- Or use a different port (update frontend/src/App.tsx and server/src/bin/repo_client.rs)
+
+**Sync not working?**
+- Check sync server is running on port 3030
+- Check browser console and terminal logs
+- Make sure you're using the full automerge URL (with `automerge:` prefix)
+
+**Build errors?**
+- Update Rust: `rustup update`
+- Clean build: `cd server && cargo clean && cargo build --release`
 
 ## Next Steps
 
-- Read `DEMO.md` for in-depth explanations
-- Check `server/examples/simple_client.rs` for Rust examples
-- Explore the `frontend/src/App.tsx` to see how the UI works
-- Run `npm run type-check` in frontend/ to validate TypeScript
+- Read [README.md](README.md) for architecture details
+- See [RUST_CLIENT.md](RUST_CLIENT.md) for CLI documentation
+- Check [DEMO.md](DEMO.md) for detailed walkthrough
 
-## Key Concepts (30 Second Version)
+## Tips
 
-**CRDTs**: Conflict-Free Replicated Data Types - they merge automatically, no conflicts!
+- Use `--release` for faster CLI execution
+- The CLI connects, makes changes, and disconnects - perfect for automation
+- Changes persist in browser's IndexedDB
+- Create a shell alias for the CLI:
+  ```bash
+  alias am='cargo run --release --bin automerge-cli --manifest-path=/path/to/server/Cargo.toml --'
+  am automerge:YOUR_DOC_ID increment
+  ```
 
-**Local-First**: Your data lives on your device. Network is optional.
-
-**Automerge**: Makes it all work together. Same document format in JavaScript and Rust.
-
-**That's it!** You now have a working collaborative app. 🎉
+Enjoy collaborating across platforms! 🦀 + 🌐 = 🚀

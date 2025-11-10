@@ -1,62 +1,89 @@
 //! CLI client using samod (automerge-repo for Rust)
 //!
-//! This properly integrates with automerge-repo's sync protocol,
-//! so it can collaborate with the JavaScript frontend!
+//! This CLI connects to an automerge-repo sync server and can
+//! read/modify documents that are also being edited in the browser.
 //!
 //! Usage:
-//!   cargo run --bin repo_client -- <automerge-url> [command]
-//!
-//! Commands:
-//!   increment        - Increment the counter by 1
-//!   decrement        - Decrement the counter by 1
-//!   set-counter <n>  - Set counter to specific value
-//!   add-note <text>  - Add text to notes
-//!   add-user <name>  - Add a collaborator
-//!   show             - Just display the current document state
+//!   cargo run --bin automerge-cli -- <automerge-url> [command]
 
 use anyhow::{Context, Result};
 use automerge::{transaction::Transactable, ObjType, ReadDoc};
+use clap::{Parser, Subcommand};
+use futures_util::StreamExt;
+use std::convert::Infallible;
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::info;
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 
-#[derive(Debug)]
+#[derive(Parser)]
+#[command(name = "automerge-cli")]
+#[command(about = "CLI client for Automerge documents using samod", long_about = None)]
+struct Cli {
+    /// Automerge document URL (e.g., automerge:4VgLSsiuVNfWeZk17m85GgA18VVp)
+    #[arg(value_name = "URL")]
+    doc_url: String,
+
+    /// Enable verbose debug logging
+    #[arg(short, long)]
+    verbose: bool,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand)]
 enum Command {
+    /// Increment the counter by 1
     Increment,
+    /// Decrement the counter by 1
     Decrement,
-    SetCounter(i64),
-    AddNote(String),
-    AddUser(String),
+    /// Set counter to a specific value
+    SetCounter { value: i64 },
+    /// Add text to notes
+    AddNote { text: String },
+    /// Add a collaborator
+    AddUser { name: String },
+    /// Display current document state (default)
     Show,
 }
 
-impl Command {
-    fn from_args(args: &[String]) -> Result<Self> {
-        if args.is_empty() {
-            return Ok(Command::Show);
-        }
+#[derive(Debug, Clone, Default)]
+struct Doc {
+    counter: i64,
+    notes: String,
+    collaborators: Vec<String>,
+}
 
-        match args[0].as_str() {
-            "increment" => Ok(Command::Increment),
-            "decrement" => Ok(Command::Decrement),
-            "set-counter" => {
-                let value = args
-                    .get(1)
-                    .context("set-counter requires a value")?
-                    .parse::<i64>()?;
-                Ok(Command::SetCounter(value))
-            }
-            "add-note" => {
-                let text = args.get(1).context("add-note requires text")?.clone();
-                Ok(Command::AddNote(text))
-            }
-            "add-user" => {
-                let name = args.get(1).context("add-user requires a name")?.clone();
-                Ok(Command::AddUser(name))
-            }
-            "show" => Ok(Command::Show),
-            _ => anyhow::bail!("Unknown command: {}", args[0]),
+impl Doc {
+    fn from_automerge(doc: &automerge::Automerge) -> Result<Self> {
+        let counter = get_counter(doc);
+        let notes = get_notes(doc)?;
+        let collaborators = get_collaborators(doc)?;
+
+        Ok(Doc {
+            counter,
+            notes,
+            collaborators,
+        })
+    }
+
+    fn display(&self) {
+        println!("\n📄 Document State:");
+        println!("  Counter: {}", self.counter);
+        if self.notes.is_empty() {
+            println!("  Notes: (empty)");
+        } else {
+            println!("  Notes: {}", self.notes);
         }
+        if self.collaborators.is_empty() {
+            println!("  Collaborators: (none)");
+        } else {
+            println!("  Collaborators:");
+            for user in &self.collaborators {
+                println!("    - {}", user);
+            }
+        }
+        println!();
     }
 }
 
@@ -67,108 +94,113 @@ fn get_counter(doc: &automerge::Automerge) -> i64 {
     }
 }
 
-fn get_notes(doc: &automerge::Automerge) -> String {
+fn get_notes(doc: &automerge::Automerge) -> Result<String> {
     match doc.get(automerge::ROOT, "notes") {
         Ok(Some((automerge::Value::Scalar(s), _))) => {
-            s.to_str().map(|s| s.to_string()).unwrap_or_default()
+            Ok(s.to_str().map(|s| s.to_string()).unwrap_or_default())
         }
-        _ => String::new(),
+        Ok(Some((automerge::Value::Object(ObjType::Text), obj_id))) => {
+            doc.text(&obj_id).context("Failed to read text object")
+        }
+        Ok(None) => Ok(String::new()),
+        Ok(Some((val, _))) => {
+            anyhow::bail!("Unexpected type for notes field: {:?}", val)
+        }
+        Err(e) => Err(e).context("Failed to get notes field"),
     }
 }
 
-fn get_collaborators(doc: &automerge::Automerge) -> Vec<String> {
+fn get_collaborators(doc: &automerge::Automerge) -> Result<Vec<String>> {
     match doc.get(automerge::ROOT, "collaborators") {
         Ok(Some((automerge::Value::Object(ObjType::List), id))) => {
             let len = doc.length(&id);
-            (0..len)
-                .filter_map(|i| {
-                    doc.get(&id, i).ok().and_then(|opt| {
-                        opt.and_then(|(val, _)| match val {
-                            automerge::Value::Scalar(s) => s.to_str().map(|s| s.to_string()),
-                            _ => None,
-                        })
-                    })
-                })
-                .collect()
+            let mut collaborators = Vec::new();
+
+            for i in 0..len {
+                match doc.get(&id, i) {
+                    Ok(Some((automerge::Value::Scalar(s), _))) => {
+                        if let Some(text) = s.to_str() {
+                            collaborators.push(text.to_string());
+                        }
+                    }
+                    Ok(Some((automerge::Value::Object(ObjType::Text), obj_id))) => {
+                        if let Ok(text) = doc.text(&obj_id) {
+                            collaborators.push(text);
+                        }
+                    }
+                    _ => continue,
+                }
+            }
+            Ok(collaborators)
         }
-        _ => Vec::new(),
+        Ok(None) => Ok(Vec::new()),
+        Ok(Some((val, _))) => {
+            anyhow::bail!("Unexpected type for collaborators field: {:?}", val)
+        }
+        Err(e) => Err(e).context("Failed to get collaborators field"),
     }
 }
 
-fn display_document(doc: &automerge::Automerge) {
-    println!("\n📄 Document State:");
-    println!("  Counter: {}", get_counter(doc));
-    let notes = get_notes(doc);
-    if notes.is_empty() {
-        println!("  Notes: (empty)");
-    } else {
-        println!("  Notes: {}", notes);
-    }
-    let collaborators = get_collaborators(doc);
-    if collaborators.is_empty() {
-        println!("  Collaborators: (none)");
-    } else {
-        println!("  Collaborators:");
-        for user in collaborators {
-            println!("    - {}", user);
-        }
-    }
-    println!();
-}
-
-async fn execute_command(
-    doc_handle: &samod::DocHandle,
-    command: &Command,
-) -> Result<()> {
+async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Result<()> {
     match command {
         Command::Increment => {
             doc_handle.with_document(|doc| {
                 let current = get_counter(doc);
                 doc.transact(|tx| {
                     tx.put(automerge::ROOT, "counter", current + 1)?;
-                    info!("✅ Incremented counter: {} → {}", current, current + 1);
                     Ok::<_, automerge::AutomergeError>(())
-                }).unwrap()
+                }).expect("Failed to increment counter");
             });
+            tracing::debug!("Incremented counter");
         }
         Command::Decrement => {
             doc_handle.with_document(|doc| {
                 let current = get_counter(doc);
                 doc.transact(|tx| {
                     tx.put(automerge::ROOT, "counter", current - 1)?;
-                    info!("✅ Decremented counter: {} → {}", current, current - 1);
                     Ok::<_, automerge::AutomergeError>(())
-                }).unwrap()
+                }).expect("Failed to decrement counter");
             });
+            tracing::debug!("Decremented counter");
         }
-        Command::SetCounter(value) => {
+        Command::SetCounter { value } => {
             doc_handle.with_document(|doc| {
-                let current = get_counter(doc);
                 doc.transact(|tx| {
                     tx.put(automerge::ROOT, "counter", *value)?;
-                    info!("✅ Set counter: {} → {}", current, value);
                     Ok::<_, automerge::AutomergeError>(())
-                }).unwrap()
+                }).expect("Failed to set counter");
             });
+            tracing::debug!("Set counter to {}", value);
         }
-        Command::AddNote(text) => {
+        Command::AddNote { text } => {
             doc_handle.with_document(|doc| {
-                let current_notes = get_notes(doc);
-                let new_notes = if current_notes.is_empty() {
-                    text.clone()
-                } else {
-                    format!("{}\n{}", current_notes, text)
-                };
                 doc.transact(|tx| {
-                    tx.put(automerge::ROOT, "notes", new_notes.as_str())?;
-                    info!("✅ Added note: {}", text);
+                    // Get existing notes
+                    let notes_obj = match tx.get(automerge::ROOT, "notes")? {
+                        Some((automerge::Value::Object(ObjType::Text), id)) => id,
+                        _ => {
+                            // Create as Text object for JS compatibility
+                            tx.put_object(automerge::ROOT, "notes", ObjType::Text)?
+                        }
+                    };
+
+                    // Get current text
+                    let current = tx.text(&notes_obj)?;
+                    let new_text = if current.is_empty() {
+                        text.clone()
+                    } else {
+                        format!("{}\n{}", current, text)
+                    };
+
+                    // Replace all text
+                    tx.splice_text(&notes_obj, 0, current.len() as isize, &new_text)?;
                     Ok::<_, automerge::AutomergeError>(())
-                }).unwrap()
+                }).expect("Failed to add note");
             });
+            tracing::debug!("Added note");
         }
-        Command::AddUser(name) => {
+        Command::AddUser { name } => {
             doc_handle.with_document(|doc| {
-                let existing_users = get_collaborators(doc);
                 doc.transact(|tx| {
                     // Get or create collaborators list
                     let collaborators = match tx.get(automerge::ROOT, "collaborators")? {
@@ -177,15 +209,30 @@ async fn execute_command(
                     };
 
                     // Check if user already exists
-                    if existing_users.contains(name) {
-                        info!("⚠️  User '{}' already in collaborators list", name);
-                    } else {
-                        let len = tx.length(&collaborators);
-                        tx.insert(&collaborators, len, name.as_str())?;
-                        info!("✅ Added collaborator: {}", name);
+                    let len = tx.length(&collaborators);
+                    let mut exists = false;
+                    for i in 0..len {
+                        if let Ok(Some((automerge::Value::Object(ObjType::Text), obj_id))) = tx.get(&collaborators, i) {
+                            if let Ok(text) = tx.text(&obj_id) {
+                                if text == *name {
+                                    exists = true;
+                                    break;
+                                }
+                            }
+                        }
                     }
+
+                    if !exists {
+                        // Insert as Text object for JS compatibility
+                        let text_obj = tx.insert_object(&collaborators, len, ObjType::Text)?;
+                        tx.splice_text(&text_obj, 0, 0, name)?;
+                        tracing::debug!("Added collaborator: {}", name);
+                    } else {
+                        tracing::debug!("User '{}' already exists", name);
+                    }
+
                     Ok::<_, automerge::AutomergeError>(())
-                }).unwrap()
+                }).expect("Failed to add user");
             });
         }
         Command::Show => {
@@ -197,34 +244,22 @@ async fn execute_command(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    let cli = Cli::parse();
 
-    let args: Vec<String> = std::env::args().collect();
+    // Initialize logging based on verbose flag
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            if cli.verbose {
+                tracing_subscriber::EnvFilter::new("debug")
+            } else {
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"))
+            },
+        )
+        .init();
 
-    if args.len() < 2 {
-        eprintln!("Usage: {} <automerge-url> [command] [args...]", args[0]);
-        eprintln!();
-        eprintln!("The automerge-url should be the full URL from your browser:");
-        eprintln!("  automerge:4VgLSsiuVNfWeZk17m85GgA18VVp");
-        eprintln!();
-        eprintln!("Commands:");
-        eprintln!("  increment              - Increment the counter by 1");
-        eprintln!("  decrement              - Decrement the counter by 1");
-        eprintln!("  set-counter <n>        - Set counter to specific value");
-        eprintln!("  add-note <text>        - Add text to notes");
-        eprintln!("  add-user <name>        - Add a collaborator");
-        eprintln!("  show                   - Display current document state (default)");
-        eprintln!();
-        eprintln!("Example:");
-        eprintln!(
-            "  {} automerge:4VgLSsiuVNfWeZk17m85GgA18VVp increment",
-            args[0]
-        );
-        std::process::exit(1);
-    }
-
-    let doc_url = &args[1];
-    let command = Command::from_args(&args[2..])?;
+    let doc_url = &cli.doc_url;
+    let command = cli.command.unwrap_or(Command::Show);
 
     // Parse the automerge URL
     if !doc_url.starts_with("automerge:") {
@@ -233,81 +268,133 @@ async fn main() -> Result<()> {
 
     let doc_id_str = doc_url.strip_prefix("automerge:").unwrap();
 
-    info!("🦀 Initializing automerge-repo...");
+    tracing::debug!("Initializing automerge-repo");
 
-    // Create a repo with WebSocket sync to your existing server
+    // Create a repo with in-memory storage
     let repo = samod::Repo::build_tokio()
         .with_storage(samod::storage::InMemoryStorage::new())
         .load()
         .await;
 
-    info!("📡 Connecting to sync server at ws://localhost:3030...");
+    tracing::debug!("Connecting to sync server");
 
-    // Connect to websocket sync server using samod's built-in method
-    tokio::spawn(repo.connect_websocket(
-        "ws://localhost:3030".parse()?,
-        samod::ConnDirection::Outgoing,
-    ));
+    // Connect to WebSocket server using tokio-tungstenite
+    let (ws_stream, _) = connect_async("ws://localhost:3030")
+        .await
+        .context("Failed to connect to WebSocket server")?;
 
-    info!("✅ Connection initiated");
+    tracing::debug!("WebSocket connected");
 
-    // Give connection time to establish
-    sleep(Duration::from_millis(500)).await;
+    let (ws_sink, ws_stream) = ws_stream.split();
 
-    info!("📥 Loading document: automerge:{}", doc_id_str);
+    // Create channels to bridge WebSocket and samod
+    let (to_samod_tx, to_samod_rx) = futures::channel::mpsc::unbounded::<Vec<u8>>();
+    let (from_samod_tx, from_samod_rx) = futures::channel::mpsc::unbounded::<Vec<u8>>();
+
+    // Forward WebSocket messages to samod
+    let ws_to_samod = async move {
+        let mut stream = ws_stream;
+        while let Some(msg) = stream.next().await {
+            match msg {
+                Ok(Message::Binary(data)) => {
+                    if to_samod_tx.unbounded_send(data).is_err() {
+                        break;
+                    }
+                }
+                Ok(Message::Close(_)) => break,
+                Ok(_) => {} // Ignore text/ping/pong
+                Err(e) => {
+                    tracing::warn!("WebSocket error: {}", e);
+                    break;
+                }
+            }
+        }
+    };
+
+    // Forward samod messages to WebSocket
+    let samod_to_ws = async move {
+        use futures_util::SinkExt;
+        let mut rx = from_samod_rx;
+        let mut sink = ws_sink;
+        while let Some(bytes) = rx.next().await {
+            if sink.send(Message::Binary(bytes)).await.is_err() {
+                break;
+            }
+        }
+    };
+
+    // Spawn the connection handling tasks
+    let ws_to_samod_handle = tokio::spawn(ws_to_samod);
+    let samod_to_ws_handle = tokio::spawn(samod_to_ws);
+
+    // Connect the repo to the sync server
+    let repo_clone = repo.clone();
+    tokio::spawn(async move {
+        let result = repo_clone
+            .connect(
+                to_samod_rx.map(Ok::<_, Infallible>),
+                from_samod_tx,
+                samod::ConnDirection::Outgoing,
+            )
+            .await;
+
+        tracing::debug!("Sync connection finished: {:?}", result);
+    });
+
+    tracing::debug!("Loading document: automerge:{}", doc_id_str);
 
     // Create DocumentId from string
     let doc_id: samod::DocumentId = doc_id_str.parse()?;
 
-    // Try to find the document
-    let doc_handle = match repo.find(doc_id.clone()).await? {
-        Some(handle) => {
-            info!("✅ Document found!");
-            handle
-        }
-        None => {
-            info!("📝 Document not found, creating new one...");
-            // Create a new document with initial structure
-            let mut initial_doc = automerge::Automerge::new();
-            initial_doc.transact::<_, _, automerge::AutomergeError>(|tx| {
-                tx.put(automerge::ROOT, "counter", 0_i64)?;
-                tx.put(automerge::ROOT, "notes", "")?;
-                tx.put_object(automerge::ROOT, "collaborators", ObjType::List)?;
-                Ok(())
-            }).unwrap();
-            repo.create(initial_doc).await?
-        }
-    };
+    // Try to find the document (may return None if not synced yet)
+    tracing::debug!("Looking for document...");
+    let mut doc_handle = repo.find(doc_id.clone()).await?;
 
-    // Wait for sync
-    sleep(Duration::from_secs(1)).await;
+    // TODO: Replace sleep with proper reactive sync completion detection
+    // Race condition: samod's sync happens asynchronously. We need to wait for
+    // the document to be fully synced from the server before reading it.
+    // Proper fix: Listen for sync state changes or document ready events.
+    // Current workaround: Sleep to allow sync protocol to complete.
+    if doc_handle.is_none() {
+        tracing::debug!("Document not immediately available, waiting for sync...");
+        sleep(Duration::from_secs(2)).await;
+
+        // Try again after sync
+        doc_handle = repo.find(doc_id.clone()).await?;
+    } else {
+        tracing::debug!("Document found, waiting for full sync...");
+        sleep(Duration::from_secs(2)).await;
+    }
+
+    let doc_handle = doc_handle.context(
+        "Document not found. Make sure:\n  1. The sync server is running\n  2. The document exists in the browser\n  3. The document ID is correct"
+    )?;
 
     // Display state before changes
-    doc_handle.with_document(|doc| {
-        info!("📄 Current document state:");
-        display_document(doc);
-    });
+    if !matches!(command, Command::Show) {
+        println!("\n📄 Before:");
+    }
+
+    let doc_data = doc_handle.with_document(|doc| {
+        Doc::from_automerge(doc)
+    })?;
+
+    doc_data.display();
 
     // Execute the command
     if !matches!(command, Command::Show) {
-        info!("🔧 Executing command...");
         execute_command(&doc_handle, &command).await?;
 
-        // Give changes time to sync
-        sleep(Duration::from_millis(500)).await;
-
-        // Display final state
-        doc_handle.with_document(|doc| {
-            info!("📄 After changes:");
-            display_document(doc);
-        });
+        println!("\n📄 After:");
+        let doc_data = doc_handle.with_document(|doc| {
+            Doc::from_automerge(doc)
+        })?;
+        doc_data.display();
     }
 
-    info!("✨ Done! Changes should appear in your browser now.");
-    info!("💡 Check your browser to see the updates!");
-
-    // Keep alive for a bit to ensure changes are fully synced
-    sleep(Duration::from_secs(2)).await;
+    // Clean up
+    ws_to_samod_handle.abort();
+    samod_to_ws_handle.abort();
 
     Ok(())
 }

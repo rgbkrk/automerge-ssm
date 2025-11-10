@@ -1,14 +1,14 @@
 # Automerge SSM Demo
 
-A demonstration of real-time collaborative editing using Automerge with both a frontend web client and a Rust server component that can collaborate on the same document.
+A demonstration of real-time collaborative editing using Automerge with a frontend web client and a Rust CLI client that both connect to a sync server and can collaborate on the same document.
 
 ## Overview
 
 This project showcases Automerge's capabilities for building local-first, multiplayer applications. It consists of:
 
 - **Frontend**: A React + TypeScript web application using `@automerge/automerge-repo`
-- **Server**: A Rust WebSocket server that can also read/write to Automerge documents
-- Both components can collaborate on the same document in real-time
+- **CLI**: A Rust command-line client using `samod` (Rust automerge-repo)
+- Both connect to a sync server at `localhost:3030` and collaborate in real-time
 
 ## Features
 
@@ -32,6 +32,7 @@ For detailed explanations and architecture info, continue reading below or check
 - Node.js (v18+)
 - Rust (latest stable)
 - Cargo
+- A sync server running on `ws://localhost:3030` (e.g., [automerge-repo-sync-server](https://github.com/automerge/automerge-repo-sync-server))
 
 ## Setup
 
@@ -51,25 +52,24 @@ npm install
 
 **Note:** The project includes `vite-plugin-wasm` and `vite-plugin-top-level-await` to handle Automerge's WebAssembly module loading. These are already configured in `vite.config.ts`.
 
-### 3. Build Server Dependencies
+### 3. Build CLI
 
 ```bash
 cd ../server
-cargo build
+cargo build --release
 ```
 
 ## Running the Demo
 
-You'll need to run both the server and the frontend:
+You'll need to run a sync server and the frontend:
 
-### Terminal 1: Start the Rust Server
+### Terminal 1: Start a Sync Server
+
+You need an automerge-repo sync server running on port 3030. For example:
 
 ```bash
-cd server
-cargo run
+npx @automerge/automerge-repo-sync-server
 ```
-
-The server will start on `ws://localhost:3030`
 
 ### Terminal 2: Start the Frontend
 
@@ -83,15 +83,14 @@ The frontend will start on `http://localhost:5173` (or similar)
 ### Terminal 3 (Optional): Use the Rust CLI Client
 
 ```bash
-# Get the document ID from your browser URL
+# Get the document URL from your browser
 # Example: http://localhost:5173/#automerge:2mdM9TnM2sJgLhHhYjyBzfusSsyr
-#                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 # Increment the counter from Rust
-./rust-client.sh 2mdM9TnM2sJgLhHhYjyBzfusSsyr increment
+cargo run --release --bin automerge-cli -- automerge:2mdM9TnM2sJgLhHhYjyBzfusSsyr increment
 
 # Add a note from Rust
-./rust-client.sh 2mdM9TnM2sJgLhHhYjyBzfusSsyr add-note "Hello from Rust!"
+cargo run --release --bin automerge-cli -- automerge:2mdM9TnM2sJgLhHhYjyBzfusSsyr add-note "Hello from Rust!"
 ```
 
 **See [RUST_CLIENT.md](RUST_CLIENT.md) for full CLI documentation.**
@@ -121,32 +120,33 @@ The frontend will start on `http://localhost:5173` (or similar)
   - Automatic reconnection
   - Local-first architecture (works offline)
 
-### Server (`/server`)
+### CLI (`/server`)
 
 - **Technology**: Rust with Tokio async runtime
-- **Automerge Integration**: Uses native `automerge` crate
+- **Automerge Integration**: Uses `samod` (Rust implementation of automerge-repo)
 - **Features**:
-  - WebSocket server for client connections
-  - Document storage and synchronization
-  - Broadcasts changes to all connected clients
-  - Can read/write Automerge documents directly
+  - Full automerge-repo protocol compatibility
+  - Connects to any automerge-repo sync server
+  - Can read/write Automerge documents
+  - Command-line interface for document manipulation
+</parameter>
 
 ### Communication Flow
 
 ```
 ┌─────────────┐         WebSocket          ┌─────────────┐
-│   Browser   │ ◄────────────────────────► │    Rust     │
+│   Browser   │ ◄────────────────────────► │    Sync     │
 │  (Client 1) │      Automerge Sync        │   Server    │
-└─────────────┘                             └─────────────┘
+└─────────────┘                             │ :3030       │
+                                            └─────────────┘
                                                    ▲
                                                    │
                                             WebSocket
+                                         (Automerge Sync)
                                                    │
-                                                   ▼
-                                            ┌─────────────┐
-                                            │   Browser   │
-                                            │  (Client 2) │
-                                            └─────────────┘
+                                                   ├────────► Browser (Client 2)
+                                                   │
+                                                   └────────► Rust CLI
 ```
 
 ## Document Structure
@@ -161,14 +161,15 @@ interface Doc {
 }
 ```
 
-## Connecting to Your Own Sync Server
+## Sync Server
 
-The frontend is configured to connect to `ws://localhost:3030`. You already have a WebSocket server running at this address, so the demo will use both:
+Both the frontend and CLI connect to `ws://localhost:3030`. You need a sync server running at this address. You can use the official automerge-repo sync server:
 
-1. Your existing sync server at `ws://localhost:3030`
-2. This Rust demo server (you'll need to change the port if running both)
+```bash
+npx @automerge/automerge-repo-sync-server
+```
 
-To change the server URL, edit `frontend/src/App.tsx`:
+To change the server URL, edit `frontend/src/App.tsx` and `server/src/bin/repo_client.rs`:
 ### Frontend: Creating a Repo
 
 ```typescript
@@ -182,30 +183,31 @@ const repo = new Repo({
 
 ## Development Notes
 
-### Rust Server Implementation
+### Rust CLI Implementation
 
-The Rust server (`server/src/main.rs`) demonstrates:
-- WebSocket connection handling with `tokio-tungstenite`
-- Automerge document management
-- Change broadcasting to connected clients
-- Basic sync protocol implementation
+The Rust CLI (`server/src/bin/repo_client.rs`) demonstrates:
+- Using `samod` (Rust automerge-repo) for full protocol compatibility
+- WebSocket connection to sync servers
+- Document creation and manipulation
+- Real-time synchronization with browser clients
 
 ### Future Enhancements
 
-- [ ] Implement full Automerge sync protocol
-- [ ] Add authentication/authorization
-- [ ] Persistent server-side storage
+- [x] Implement full Automerge sync protocol (via samod)
+- [ ] Add authentication/authorization to sync server
+- [ ] Add persistent storage adapter
 - [ ] Rich text editing with Peritext
 - [ ] Presence awareness (cursor positions)
 - [ ] Document history/time-travel
 - [ ] Multiple document types
+- [ ] Interactive TUI mode for CLI
 
 ## Troubleshooting
 
-### Server won't start
+### Sync server won't start
 
 - Make sure port 3030 is not already in use
-- Check that Rust dependencies compiled successfully: `cargo check`
+- Try using a different port and update both frontend and CLI accordingly
 
 ### Frontend won't connect
 
@@ -221,14 +223,14 @@ The Rust server (`server/src/main.rs`) demonstrates:
 
 ## Rust CLI Client
 
-Want to modify documents from Rust? Use the CLI client:
+Want to modify documents from Rust? Use the CLI client built with `samod`:
 
 ```bash
-./rust-client.sh <document-id> increment
-./rust-client.sh <document-id> add-note "From Rust!"
+cargo run --release --bin automerge-cli -- automerge:<document-id> increment
+cargo run --release --bin automerge-cli -- automerge:<document-id> add-note "From Rust!"
 ```
 
-This demonstrates **true cross-platform collaboration** - changes from the Rust CLI appear instantly in all browser tabs!
+This demonstrates **true cross-platform collaboration** using the automerge-repo protocol - changes from the Rust CLI appear instantly in all browser tabs!
 
 📖 **Full guide:** [RUST_CLIENT.md](RUST_CLIENT.md)
 
@@ -237,6 +239,8 @@ This demonstrates **true cross-platform collaboration** - changes from the Rust 
 - [Automerge Documentation](https://automerge.org)
 - [Automerge Repo](https://github.com/automerge/automerge-repo)
 - [Automerge Rust](https://docs.rs/automerge)
+- [Samod (Rust automerge-repo)](https://docs.rs/samod)
+- [Automerge Repo Sync Server](https://github.com/automerge/automerge-repo-sync-server)
 
 ## License
 
