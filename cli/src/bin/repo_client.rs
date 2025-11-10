@@ -61,6 +61,8 @@ enum Command {
     AddTag { tag: String },
     /// Remove a tag
     RemoveTag { tag: String },
+    /// Set document title
+    SetTitle { title: String },
     /// Display current document state (default)
     Show,
 }
@@ -328,6 +330,11 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 } else {
                     tracing::warn!("Tag '{}' not found", tag);
                 }
+            }
+            Command::SetTitle { title } => {
+                state.metadata.title = Some(title.clone());
+                state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+                tracing::debug!("Set title to: {}", title);
             }
             Command::Show => {
                 // No changes needed
