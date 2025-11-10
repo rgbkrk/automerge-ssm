@@ -56,10 +56,9 @@ interface Doc {
 function App() {
   const [docHandle, setDocHandle] = useState<DocHandle<Doc> | null>(null);
   const [doc, setDoc] = useState<Doc | null>(null);
-  const [username, setUsername] = useState("");
-  const [tempUsername, setTempUsername] = useState("");
   const [newTodo, setNewTodo] = useState("");
   const [newTag, setNewTag] = useState("");
+  const [newCollaborator, setNewCollaborator] = useState("");
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -132,7 +131,9 @@ function App() {
     if (!docHandle) return;
     docHandle.change((d: Doc) => {
       d.counter = (d.counter || 0) + 1;
+      if (!d.stats) d.stats = { totalEdits: 0, activeUsers: 0 };
       d.stats.totalEdits++;
+      if (!d.metadata) d.metadata = {};
       d.metadata.lastModified = Date.now();
     });
   };
@@ -141,7 +142,9 @@ function App() {
     if (!docHandle) return;
     docHandle.change((d: Doc) => {
       d.counter = (d.counter || 0) - 1;
+      if (!d.stats) d.stats = { totalEdits: 0, activeUsers: 0 };
       d.stats.totalEdits++;
+      if (!d.metadata) d.metadata = {};
       d.metadata.lastModified = Date.now();
     });
   };
@@ -150,6 +153,7 @@ function App() {
     if (!docHandle) return;
     docHandle.change((d: Doc) => {
       d.temperature = value[0];
+      if (!d.metadata) d.metadata = {};
       d.metadata.lastModified = Date.now();
     });
   };
@@ -158,6 +162,7 @@ function App() {
     if (!docHandle) return;
     docHandle.change((d: Doc) => {
       d.darkMode = checked;
+      if (!d.metadata) d.metadata = {};
       d.metadata.lastModified = Date.now();
     });
   };
@@ -166,6 +171,7 @@ function App() {
     if (!docHandle) return;
     docHandle.change((d: Doc) => {
       d.notes = newNotes;
+      if (!d.metadata) d.metadata = {};
       d.metadata.lastModified = Date.now();
     });
   };
@@ -179,7 +185,9 @@ function App() {
         text: newTodo,
         completed: false,
       });
+      if (!d.stats) d.stats = { totalEdits: 0, activeUsers: 0 };
       d.stats.totalEdits++;
+      if (!d.metadata) d.metadata = {};
       d.metadata.lastModified = Date.now();
     });
     setNewTodo("");
@@ -188,9 +196,10 @@ function App() {
   const toggleTodo = (id: string) => {
     if (!docHandle) return;
     docHandle.change((d: Doc) => {
-      const todo = d.todos.find((t) => t.id === id);
+      const todo = d.todos?.find((t) => t.id === id);
       if (todo) {
         todo.completed = !todo.completed;
+        if (!d.metadata) d.metadata = {};
         d.metadata.lastModified = Date.now();
       }
     });
@@ -199,9 +208,11 @@ function App() {
   const deleteTodo = (id: string) => {
     if (!docHandle) return;
     docHandle.change((d: Doc) => {
+      if (!d.todos) return;
       const index = d.todos.findIndex((t) => t.id === id);
       if (index !== -1) {
         d.todos.splice(index, 1);
+        if (!d.metadata) d.metadata = {};
         d.metadata.lastModified = Date.now();
       }
     });
@@ -213,6 +224,7 @@ function App() {
       if (!d.tags) d.tags = [];
       if (!d.tags.includes(newTag)) {
         d.tags.push(newTag);
+        if (!d.metadata) d.metadata = {};
         d.metadata.lastModified = Date.now();
       }
     });
@@ -222,24 +234,27 @@ function App() {
   const removeTag = (tag: string) => {
     if (!docHandle) return;
     docHandle.change((d: Doc) => {
+      if (!d.tags) return;
       const index = d.tags.indexOf(tag);
       if (index !== -1) {
         d.tags.splice(index, 1);
+        if (!d.metadata) d.metadata = {};
         d.metadata.lastModified = Date.now();
       }
     });
   };
 
-  const joinSession = () => {
-    if (!docHandle || !tempUsername) return;
+  const addCollaborator = () => {
+    if (!docHandle || !newCollaborator.trim()) return;
     docHandle.change((d: Doc) => {
       if (!d.collaborators) d.collaborators = [];
-      if (!d.collaborators.includes(tempUsername)) {
-        d.collaborators.push(tempUsername);
+      if (!d.collaborators.includes(newCollaborator)) {
+        d.collaborators.push(newCollaborator);
+        if (!d.stats) d.stats = { totalEdits: 0, activeUsers: 0 };
         d.stats.activeUsers = d.collaborators.length;
       }
     });
-    setUsername(tempUsername);
+    setNewCollaborator("");
   };
 
   const copyUrl = async () => {
@@ -273,269 +288,253 @@ function App() {
                 Comprehensive Automerge CRDT Demo
               </p>
             </div>
-            <div className="flex items-center gap-4">
-              {username && (
-                <Badge variant="secondary" className="text-sm">
-                  👤 {username}
-                </Badge>
+            <Button onClick={copyUrl} variant="outline" size="sm">
+              {copied ? (
+                <Check className="h-4 w-4 mr-2" />
+              ) : (
+                <Copy className="h-4 w-4 mr-2" />
               )}
-              <Button onClick={copyUrl} variant="outline" size="sm">
-                {copied ? (
-                  <Check className="h-4 w-4 mr-2" />
-                ) : (
-                  <Copy className="h-4 w-4 mr-2" />
-                )}
-                {copied ? "Copied!" : "Share"}
-              </Button>
-            </div>
+              {copied ? "Copied!" : "Share"}
+            </Button>
           </div>
         </div>
       </header>
 
       <div className="container mx-auto px-4 py-8">
-        {!username ? (
-          <Card className="max-w-md mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Counter (CRDT-friendly integer) */}
+          <Card>
             <CardHeader>
-              <CardTitle>Join Collaboration</CardTitle>
+              <CardTitle>Counter</CardTitle>
               <CardDescription>
-                Enter your name to start collaborating
+                Concurrent increments merge correctly
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex gap-2">
-                <Input
-                  value={tempUsername}
-                  onChange={(e) => setTempUsername(e.target.value)}
-                  placeholder="Your name"
-                  onKeyDown={(e) => e.key === "Enter" && joinSession()}
-                />
-                <Button onClick={joinSession} disabled={!tempUsername}>
-                  Join
+              <div className="flex items-center justify-center gap-4">
+                <Button
+                  onClick={decrementCounter}
+                  variant="outline"
+                  size="icon"
+                >
+                  <Minus className="h-4 w-4" />
                 </Button>
+                <div className="text-5xl font-bold text-primary w-24 text-center">
+                  {doc.counter || 0}
+                </div>
+                <Button
+                  onClick={incrementCounter}
+                  variant="outline"
+                  size="icon"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground text-center mt-4">
+                Type: <code>number</code>
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Slider (number) */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Temperature</CardTitle>
+              <CardDescription>Slider value syncs in real-time</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="text-4xl font-bold text-center text-orange-500">
+                  {doc.temperature}°C
+                </div>
+                <Slider
+                  value={[doc.temperature || 20]}
+                  onValueChange={setTemperature}
+                  min={0}
+                  max={40}
+                  step={1}
+                />
+                <p className="text-xs text-muted-foreground text-center">
+                  Type: <code>number</code>
+                </p>
               </div>
             </CardContent>
           </Card>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* Counter (CRDT-friendly integer) */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Counter</CardTitle>
-                <CardDescription>
-                  Concurrent increments merge correctly
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-center gap-4">
-                  <Button
-                    onClick={decrementCounter}
-                    variant="outline"
-                    size="icon"
-                  >
-                    <Minus className="h-4 w-4" />
+
+          {/* Boolean (switch) */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Dark Mode</CardTitle>
+              <CardDescription>Boolean state synchronized</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col items-center justify-center space-y-4 py-4">
+                <div className="text-4xl">{doc.darkMode ? "🌙" : "☀️"}</div>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    checked={doc.darkMode || false}
+                    onCheckedChange={toggleDarkMode}
+                  />
+                  <span className="text-sm font-medium">
+                    {doc.darkMode ? "Dark" : "Light"}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground text-center">
+                  Type: <code>boolean</code>
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Text (CRDT Text) */}
+          <Card className="md:col-span-2">
+            <CardHeader>
+              <CardTitle>Collaborative Notes</CardTitle>
+              <CardDescription>
+                CRDT text merges character-by-character
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Textarea
+                value={doc.notes || ""}
+                onChange={(e) => updateNotes(e.target.value)}
+                placeholder="Start typing... changes sync in real-time!"
+                rows={5}
+                className="resize-none"
+              />
+              <p className="text-xs text-muted-foreground mt-2">
+                Type: <code>string</code> (stored as Automerge Text)
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* List of Objects (Todos) */}
+          <Card className="md:col-span-1">
+            <CardHeader>
+              <CardTitle>Todo List</CardTitle>
+              <CardDescription>List with complex objects</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <Input
+                    value={newTodo}
+                    onChange={(e) => setNewTodo(e.target.value)}
+                    placeholder="New todo"
+                    onKeyDown={(e) => e.key === "Enter" && addTodo()}
+                  />
+                  <Button onClick={addTodo} size="icon" variant="outline">
+                    <Plus className="h-4 w-4" />
                   </Button>
-                  <div className="text-5xl font-bold text-primary w-24 text-center">
-                    {doc.counter || 0}
-                  </div>
+                </div>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {doc.todos && doc.todos.length > 0 ? (
+                    doc.todos.map((todo) => (
+                      <div
+                        key={todo.id}
+                        className="flex items-center gap-2 p-2 rounded-md border"
+                      >
+                        <Checkbox
+                          checked={todo.completed}
+                          onCheckedChange={() => toggleTodo(todo.id)}
+                        />
+                        <span
+                          className={`flex-1 text-sm ${
+                            todo.completed
+                              ? "line-through text-muted-foreground"
+                              : ""
+                          }`}
+                        >
+                          {todo.text}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteTodo(todo.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No todos yet
+                    </p>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Type: <code>Array&lt;Object&gt;</code>
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Simple List (Tags) */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Tags</CardTitle>
+              <CardDescription>Simple string array</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <Input
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    placeholder="Add tag"
+                    onKeyDown={(e) => e.key === "Enter" && addTag()}
+                  />
+                  <Button onClick={addTag} size="icon" variant="outline">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {doc.tags && doc.tags.length > 0 ? (
+                    doc.tags.map((tag) => (
+                      <Badge key={tag} variant="secondary">
+                        {tag}
+                        <button
+                          onClick={() => removeTag(tag)}
+                          className="ml-2 hover:text-destructive"
+                        >
+                          ×
+                        </button>
+                      </Badge>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No tags</p>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Type: <code>Array&lt;string&gt;</code>
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Collaborators (List) */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Collaborators</CardTitle>
+              <CardDescription>Active users list</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <Input
+                    value={newCollaborator}
+                    onChange={(e) => setNewCollaborator(e.target.value)}
+                    placeholder="Add name"
+                    onKeyDown={(e) => e.key === "Enter" && addCollaborator()}
+                  />
                   <Button
-                    onClick={incrementCounter}
-                    variant="outline"
+                    onClick={addCollaborator}
                     size="icon"
+                    variant="outline"
                   >
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground text-center mt-4">
-                  Type: <code>number</code>
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* Slider (number) */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Temperature</CardTitle>
-                <CardDescription>
-                  Slider value syncs in real-time
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="text-4xl font-bold text-center text-orange-500">
-                    {doc.temperature}°C
-                  </div>
-                  <Slider
-                    value={[doc.temperature || 20]}
-                    onValueChange={setTemperature}
-                    min={0}
-                    max={40}
-                    step={1}
-                  />
-                  <p className="text-xs text-muted-foreground text-center">
-                    Type: <code>number</code>
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Boolean (switch) */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Dark Mode</CardTitle>
-                <CardDescription>Boolean state synchronized</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col items-center justify-center space-y-4 py-4">
-                  <div className="text-4xl">{doc.darkMode ? "🌙" : "☀️"}</div>
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      checked={doc.darkMode || false}
-                      onCheckedChange={toggleDarkMode}
-                    />
-                    <span className="text-sm font-medium">
-                      {doc.darkMode ? "Dark" : "Light"}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground text-center">
-                    Type: <code>boolean</code>
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Text (CRDT Text) */}
-            <Card className="md:col-span-2">
-              <CardHeader>
-                <CardTitle>Collaborative Notes</CardTitle>
-                <CardDescription>
-                  CRDT text merges character-by-character
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Textarea
-                  value={doc.notes || ""}
-                  onChange={(e) => updateNotes(e.target.value)}
-                  placeholder="Start typing... changes sync in real-time!"
-                  rows={5}
-                  className="resize-none"
-                />
-                <p className="text-xs text-muted-foreground mt-2">
-                  Type: <code>string</code> (stored as Automerge Text)
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* List of Objects (Todos) */}
-            <Card className="md:col-span-1">
-              <CardHeader>
-                <CardTitle>Todo List</CardTitle>
-                <CardDescription>List with complex objects</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex gap-2">
-                    <Input
-                      value={newTodo}
-                      onChange={(e) => setNewTodo(e.target.value)}
-                      placeholder="New todo"
-                      onKeyDown={(e) => e.key === "Enter" && addTodo()}
-                    />
-                    <Button onClick={addTodo} size="icon" variant="outline">
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {doc.todos && doc.todos.length > 0 ? (
-                      doc.todos.map((todo) => (
-                        <div
-                          key={todo.id}
-                          className="flex items-center gap-2 p-2 rounded-md border"
-                        >
-                          <Checkbox
-                            checked={todo.completed}
-                            onCheckedChange={() => toggleTodo(todo.id)}
-                          />
-                          <span
-                            className={`flex-1 text-sm ${
-                              todo.completed
-                                ? "line-through text-muted-foreground"
-                                : ""
-                            }`}
-                          >
-                            {todo.text}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => deleteTodo(todo.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-muted-foreground text-center py-4">
-                        No todos yet
-                      </p>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Type: <code>Array&lt;Object&gt;</code>
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Simple List (Tags) */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Tags</CardTitle>
-                <CardDescription>Simple string array</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex gap-2">
-                    <Input
-                      value={newTag}
-                      onChange={(e) => setNewTag(e.target.value)}
-                      placeholder="Add tag"
-                      onKeyDown={(e) => e.key === "Enter" && addTag()}
-                    />
-                    <Button onClick={addTag} size="icon" variant="outline">
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {doc.tags && doc.tags.length > 0 ? (
-                      doc.tags.map((tag) => (
-                        <Badge key={tag} variant="secondary">
-                          {tag}
-                          <button
-                            onClick={() => removeTag(tag)}
-                            className="ml-2 hover:text-destructive"
-                          >
-                            ×
-                          </button>
-                        </Badge>
-                      ))
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No tags</p>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Type: <code>Array&lt;string&gt;</code>
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Collaborators (List) */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Collaborators</CardTitle>
-                <CardDescription>Active users list</CardDescription>
-              </CardHeader>
-              <CardContent>
                 <div className="space-y-2">
                   {doc.collaborators && doc.collaborators.length > 0 ? (
                     doc.collaborators.map((name, idx) => (
@@ -552,67 +551,67 @@ function App() {
                       No collaborators
                     </p>
                   )}
-                  <p className="text-xs text-muted-foreground mt-4">
-                    Type: <code>Array&lt;string&gt;</code>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Type: <code>Array&lt;string&gt;</code>
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Metadata (Nested Object) */}
+          <Card className="md:col-span-2 lg:col-span-3">
+            <CardHeader>
+              <CardTitle>Document Metadata</CardTitle>
+              <CardDescription>
+                Nested object with timestamps and stats
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Title
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {doc.metadata?.title || "Untitled"}
                   </p>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Metadata (Nested Object) */}
-            <Card className="md:col-span-2 lg:col-span-3">
-              <CardHeader>
-                <CardTitle>Document Metadata</CardTitle>
-                <CardDescription>
-                  Nested object with timestamps and stats
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Title
-                    </p>
-                    <p className="text-lg font-semibold">
-                      {doc.metadata.title || "Untitled"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Created
-                    </p>
-                    <p className="text-lg font-semibold">
-                      {doc.metadata.createdAt
-                        ? new Date(doc.metadata.createdAt).toLocaleDateString()
-                        : "—"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Total Edits
-                    </p>
-                    <p className="text-lg font-semibold">
-                      {doc.stats.totalEdits || 0}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Active Users
-                    </p>
-                    <p className="text-lg font-semibold">
-                      {doc.stats.activeUsers || 0}
-                    </p>
-                  </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Created
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {doc.metadata?.createdAt
+                      ? new Date(doc.metadata.createdAt).toLocaleDateString()
+                      : "—"}
+                  </p>
                 </div>
-                <Separator className="my-4" />
-                <p className="text-xs text-muted-foreground">
-                  Types: <code>Object</code> with <code>number</code> and{" "}
-                  <code>string</code> fields
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Total Edits
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {doc.stats?.totalEdits || 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Active Users
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {doc.stats?.activeUsers || 0}
+                  </p>
+                </div>
+              </div>
+              <Separator className="my-4" />
+              <p className="text-xs text-muted-foreground">
+                Types: <code>Object</code> with <code>number</code> and{" "}
+                <code>string</code> fields
+              </p>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Footer */}
