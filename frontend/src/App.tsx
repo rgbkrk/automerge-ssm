@@ -47,18 +47,28 @@ function App() {
 
     setDocHandle(handle);
 
-    // Subscribe to changes
-    handle.on("change", ({ doc }: { doc: Doc }) => {
-      setDoc(doc);
-    });
-
-    // Load initial state
+    // Subscribe to changes and load initial state
     handle.whenReady().then(() => {
-      setDoc(handle.docSync());
+      const updateDoc = () => {
+        const currentDoc = handle.doc();
+        if (currentDoc) {
+          setDoc(currentDoc);
+        }
+      };
+
+      // Initial load
+      updateDoc();
+
+      // Subscribe to changes using the document's change handler
+      const unsubscribe = handle.on("change", () => {
+        updateDoc();
+      });
+
+      return unsubscribe;
     });
 
     return () => {
-      handle.off("change");
+      // Cleanup will be handled by the promise
     };
   }, []);
 
