@@ -449,7 +449,7 @@ function App() {
           </Card>
 
           {/* Text (CRDT Text) */}
-          <Card className="md:col-span-2">
+          <Card>
             <CardHeader>
               <CardTitle>Collaborative Notes</CardTitle>
               <CardDescription>
@@ -461,7 +461,7 @@ function App() {
                 value={getString(doc.notes)}
                 onChange={(e) => updateNotes(e.target.value)}
                 placeholder="Start typing... changes sync in real-time!"
-                rows={5}
+                rows={3}
                 className="resize-none"
               />
               <p className="text-xs text-muted-foreground mt-2">
