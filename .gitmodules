@@ -1,0 +1,6 @@
+[submodule "vendor/autosurgeon"]
+	path = vendor/autosurgeon
+	url = https://github.com/automerge/autosurgeon.git
+[submodule "vendor/automerge"]
+	path = vendor/automerge
+	url = https://github.com/automerge/automerge.git
