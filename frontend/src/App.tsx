@@ -126,7 +126,38 @@ function App() {
 
       const updateDoc = () => {
         const currentDoc = handle.doc();
+        console.log("=== updateDoc called ===");
+        console.log("currentDoc:", currentDoc);
+        console.log("currentDoc type:", typeof currentDoc);
         if (currentDoc) {
+          console.log("currentDoc keys:", Object.keys(currentDoc));
+          console.log(
+            "currentDoc.counter:",
+            currentDoc.counter,
+            "type:",
+            typeof currentDoc.counter,
+          );
+          console.log(
+            "currentDoc.temperature:",
+            currentDoc.temperature,
+            "type:",
+            typeof currentDoc.temperature,
+          );
+          console.log(
+            "currentDoc.darkMode:",
+            currentDoc.darkMode,
+            "type:",
+            typeof currentDoc.darkMode,
+          );
+          console.log(
+            "currentDoc.notes:",
+            currentDoc.notes,
+            "type:",
+            typeof currentDoc.notes,
+          );
+          console.log("currentDoc.todos:", currentDoc.todos);
+          console.log("currentDoc.tags:", currentDoc.tags);
+          console.log("currentDoc.collaborators:", currentDoc.collaborators);
           setDoc(currentDoc);
         }
       };
@@ -134,6 +165,7 @@ function App() {
       updateDoc();
 
       const changeListener = () => {
+        console.log("=== Change event received ===");
         updateDoc();
       };
       handle.on("change", changeListener);
