@@ -1,10 +1,11 @@
 //! CLI client using samod (automerge-repo for Rust)
 //!
-//! This CLI connects to an automerge-repo sync server and can
-//! read/modify documents that are also being edited in the browser.
+//! Comprehensive CLI for the Autodash demo, showcasing all Automerge CRDT types.
 //!
 //! Usage:
 //!   cargo run --bin automerge-cli -- <automerge-url> [command]
+
+#![allow(non_snake_case)]
 
 use anyhow::{Context, Result};
 use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
@@ -17,7 +18,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 #[derive(Parser)]
 #[command(name = "automerge-cli")]
-#[command(about = "CLI client for Automerge documents using samod", long_about = None)]
+#[command(about = "CLI client for Autodash - Comprehensive Automerge demo", long_about = None)]
 struct Cli {
     /// Automerge document URL or full browser URL
     /// Examples:
@@ -42,38 +43,119 @@ enum Command {
     Decrement,
     /// Set counter to a specific value
     SetCounter { value: i64 },
+    /// Set temperature value (0-40)
+    SetTemp { value: i64 },
+    /// Toggle dark mode
+    ToggleDark,
+    /// Set dark mode on/off
+    SetDark { enabled: bool },
     /// Add text to notes
     AddNote { text: String },
+    /// Add a todo item
+    AddTodo { text: String },
+    /// Toggle todo completion
+    ToggleTodo { id: String },
+    /// Delete a todo
+    DeleteTodo { id: String },
+    /// Add a tag
+    AddTag { tag: String },
+    /// Remove a tag
+    RemoveTag { tag: String },
     /// Add a collaborator
     AddUser { name: String },
     /// Display current document state (default)
     Show,
 }
 
+#[derive(Debug, Clone, Reconcile, Hydrate)]
+struct TodoItem {
+    id: String,
+    text: String,
+    completed: bool,
+}
+
+#[derive(Debug, Clone, Default, Reconcile, Hydrate)]
+struct Metadata {
+    createdAt: Option<i64>,
+    lastModified: Option<i64>,
+    title: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Reconcile, Hydrate)]
+struct Stats {
+    totalEdits: i64,
+    activeUsers: i64,
+}
+
 #[derive(Debug, Clone, Default, Reconcile, Hydrate)]
 struct Doc {
     counter: i64,
+    temperature: i64,
+    darkMode: bool,
     notes: String,
+    todos: Vec<TodoItem>,
+    tags: Vec<String>,
     collaborators: Vec<String>,
+    metadata: Metadata,
+    stats: Stats,
 }
 
 impl Doc {
     fn display(&self) {
-        println!("\n📄 Document State:");
-        println!("  Counter: {}", self.counter);
+        println!("\n📊 Autodash State:");
+        println!("╭─────────────────────────────────────────╮");
+
+        // Basic types
+        println!("│ 🔢 Counter: {:<28}│", self.counter);
+        println!("│ 🌡️  Temperature: {}°C{:<23}│", self.temperature, "");
+        println!("│ 🌙 Dark Mode: {:<26}│", if self.darkMode { "ON" } else { "OFF" });
+
+        // Text
         if self.notes.is_empty() {
-            println!("  Notes: (empty)");
+            println!("│ 📝 Notes: (empty){:<23}│", "");
         } else {
-            println!("  Notes: {}", self.notes);
+            let preview = if self.notes.len() > 30 {
+                format!("{}...", &self.notes[..27])
+            } else {
+                self.notes.clone()
+            };
+            println!("│ 📝 Notes: {:<28}│", preview);
         }
-        if self.collaborators.is_empty() {
-            println!("  Collaborators: (none)");
-        } else {
-            println!("  Collaborators:");
-            for user in &self.collaborators {
-                println!("    - {}", user);
+
+        // Lists
+        println!("│ ✓  Todos: {:<28}│", self.todos.len());
+        println!("│ 🏷️  Tags: {:<29}│", self.tags.len());
+        println!("│ 👥 Collaborators: {:<22}│", self.collaborators.len());
+
+        // Metadata
+        if let Some(title) = &self.metadata.title {
+            println!("│ 📄 Title: {:<28}│", title);
+        }
+        println!("│ 📊 Total Edits: {:<22}│", self.stats.totalEdits);
+        println!("│ 👤 Active Users: {:<21}│", self.stats.activeUsers);
+
+        println!("╰─────────────────────────────────────────╯");
+
+        // Details
+        if !self.todos.is_empty() {
+            println!("\n✓ Todos:");
+            for todo in &self.todos {
+                let status = if todo.completed { "✓" } else { "○" };
+                println!("  {} [{}] {}", status, &todo.id[..8], todo.text);
             }
         }
+
+        if !self.tags.is_empty() {
+            println!("\n🏷️  Tags: {}", self.tags.join(", "));
+        }
+
+        if !self.collaborators.is_empty() {
+            println!("\n👥 Collaborators:");
+            for user in &self.collaborators {
+                println!("  • {}", user);
+            }
+        }
+
         println!();
     }
 }
@@ -87,15 +169,37 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
         match command {
             Command::Increment => {
                 state.counter += 1;
+                state.stats.totalEdits += 1;
+                state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Incremented counter to {}", state.counter);
             }
             Command::Decrement => {
                 state.counter -= 1;
+                state.stats.totalEdits += 1;
+                state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Decremented counter to {}", state.counter);
             }
             Command::SetCounter { value } => {
                 state.counter = *value;
+                state.stats.totalEdits += 1;
+                state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Set counter to {}", value);
+            }
+            Command::SetTemp { value } => {
+                let temp = (*value).clamp(0, 40);
+                state.temperature = temp;
+                state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+                tracing::debug!("Set temperature to {}°C", temp);
+            }
+            Command::ToggleDark => {
+                state.darkMode = !state.darkMode;
+                state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+                tracing::debug!("Toggled dark mode to {}", state.darkMode);
+            }
+            Command::SetDark { enabled } => {
+                state.darkMode = *enabled;
+                state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+                tracing::debug!("Set dark mode to {}", enabled);
             }
             Command::AddNote { text } => {
                 if state.notes.is_empty() {
@@ -103,11 +207,60 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 } else {
                     state.notes = format!("{}\n{}", state.notes, text);
                 }
+                state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Added note");
+            }
+            Command::AddTodo { text } => {
+                let todo = TodoItem {
+                    id: format!("{}", chrono::Utc::now().timestamp_millis()),
+                    text: text.clone(),
+                    completed: false,
+                };
+                state.todos.push(todo);
+                state.stats.totalEdits += 1;
+                state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+                tracing::debug!("Added todo: {}", text);
+            }
+            Command::ToggleTodo { id } => {
+                if let Some(todo) = state.todos.iter_mut().find(|t| t.id.starts_with(id)) {
+                    todo.completed = !todo.completed;
+                    state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+                    tracing::debug!("Toggled todo {}", id);
+                } else {
+                    tracing::warn!("Todo {} not found", id);
+                }
+            }
+            Command::DeleteTodo { id } => {
+                if let Some(pos) = state.todos.iter().position(|t| t.id.starts_with(id)) {
+                    state.todos.remove(pos);
+                    state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+                    tracing::debug!("Deleted todo {}", id);
+                } else {
+                    tracing::warn!("Todo {} not found", id);
+                }
+            }
+            Command::AddTag { tag } => {
+                if !state.tags.contains(tag) {
+                    state.tags.push(tag.clone());
+                    state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+                    tracing::debug!("Added tag: {}", tag);
+                } else {
+                    tracing::debug!("Tag '{}' already exists", tag);
+                }
+            }
+            Command::RemoveTag { tag } => {
+                if let Some(pos) = state.tags.iter().position(|t| t == tag) {
+                    state.tags.remove(pos);
+                    state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+                    tracing::debug!("Removed tag: {}", tag);
+                } else {
+                    tracing::warn!("Tag '{}' not found", tag);
+                }
             }
             Command::AddUser { name } => {
                 if !state.collaborators.contains(name) {
                     state.collaborators.push(name.clone());
+                    state.stats.activeUsers = state.collaborators.len() as i64;
                     tracing::debug!("Added collaborator: {}", name);
                 } else {
                     tracing::debug!("User '{}' already exists", name);

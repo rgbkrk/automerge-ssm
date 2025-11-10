@@ -1,13 +1,20 @@
-# Automerge Cross-Platform Demo
+# Autodash
 
-A minimal example of real-time collaborative editing using Automerge, demonstrating how JavaScript and Rust clients can collaborate on the same document through a sync server.
+Comprehensive Automerge CRDT demonstration showcasing real-time collaboration between React (TypeScript) and Rust clients.
 
 ## What This Demonstrates
 
-- **Cross-platform CRDTs**: Browser (JS) and CLI (Rust) editing the same document
-- **Real-time sync**: Changes appear instantly across all clients
-- **Local-first**: Works offline, syncs when reconnected
-- **Protocol compatibility**: `@automerge/automerge-repo` (JS) ↔ `samod` (Rust)
+**All Automerge Data Types:**
+- **Scalars**: `number`, `boolean`, `string`
+- **Text**: CRDT text with character-level merging
+- **Lists**: Arrays of primitives and objects
+- **Maps**: Nested object structures
+- **Timestamps**: Metadata tracking
+
+**Cross-Platform:**
+- Browser: React + TypeScript + shadcn/ui
+- CLI: Rust + autosurgeon + samod
+- Sync: Standard automerge-repo WebSocket server
 
 ## Quick Start
 
@@ -18,110 +25,302 @@ pnpx @automerge/automerge-repo-sync-server
 # Terminal 2: Frontend
 cd frontend && npm install && npm run dev
 
-# Terminal 3: CLI (grab document ID from browser URL)
+# Terminal 3: CLI
 cd cli
-cargo run --release --bin automerge-cli -- automerge:YOUR_DOC_ID increment
+cargo run --release --bin automerge-cli -- "http://localhost:5173/#automerge:YOUR_DOC_ID" show
 ```
 
-Open http://localhost:5173 in your browser, then use the CLI to modify the same document.
+Open http://localhost:5173, then use the CLI with the URL from your browser.
 
-## CLI Commands
+## Data Types Demo
 
+### Scalar Types
+
+**Counter** (`number`)
 ```bash
-# View current state
-cargo run --release --bin automerge-cli -- automerge:DOCID
-
-# Modify document
-cargo run --release --bin automerge-cli -- automerge:DOCID increment
-cargo run --release --bin automerge-cli -- automerge:DOCID add-note "Hello from Rust"
-cargo run --release --bin automerge-cli -- automerge:DOCID add-user "BotName"
-
-# Debug mode
-cargo run --release --bin automerge-cli -- --verbose automerge:DOCID
+cargo run --release --bin automerge-cli -- <url> increment
+cargo run --release --bin automerge-cli -- <url> decrement
+cargo run --release --bin automerge-cli -- <url> set-counter 42
 ```
+
+**Temperature Slider** (`number`)
+```bash
+cargo run --release --bin automerge-cli -- <url> set-temp 25
+```
+
+**Dark Mode** (`boolean`)
+```bash
+cargo run --release --bin automerge-cli -- <url> toggle-dark
+cargo run --release --bin automerge-cli -- <url> set-dark true
+```
+
+### Text Type (CRDT)
+
+**Collaborative Notes** (`string` as Automerge Text)
+```bash
+cargo run --release --bin automerge-cli -- <url> add-note "Hello from CLI"
+```
+
+Character-level CRDT merging prevents conflicts when multiple users type simultaneously.
+
+### List Types
+
+**Todo List** (`Array<Object>`)
+```bash
+# Add todo
+cargo run --release --bin automerge-cli -- <url> add-todo "Implement feature"
+
+# Toggle completion (use first 8 chars of ID from show command)
+cargo run --release --bin automerge-cli -- <url> toggle-todo 12345678
+
+# Delete todo
+cargo run --release --bin automerge-cli -- <url> delete-todo 12345678
+```
+
+**Tags** (`Array<string>`)
+```bash
+cargo run --release --bin automerge-cli -- <url> add-tag "crdt"
+cargo run --release --bin automerge-cli -- <url> remove-tag "crdt"
+```
+
+**Collaborators** (`Array<string>`)
+```bash
+cargo run --release --bin automerge-cli -- <url> add-user "RustBot"
+```
+
+### Nested Objects
+
+**Metadata** (`Object` with timestamps and title)
+- `createdAt`: Timestamp
+- `lastModified`: Timestamp  
+- `title`: String
+
+**Stats** (`Object` with counters)
+- `totalEdits`: Edit counter
+- `activeUsers`: User count
+
+All automatically tracked and synced.
 
 ## Architecture
 
 ```
-Browser (JS)  ──┐
-                ├──► Sync Server (:3030) ◄──── CLI (Rust)
-Browser (JS)  ──┘
+Browser (React)  ──┐
+                   ├──► Sync Server (:3030) ◄──── CLI (Rust)
+Browser (React)  ──┘
 ```
 
-**Frontend**: React + TypeScript + `@automerge/automerge-repo`
-- Uses WebSocket adapter for sync
-- IndexedDB for local persistence
-- Standard automerge-repo setup
+### Frontend
+- **Framework**: React 19 + TypeScript + Vite
+- **UI**: shadcn/ui (Tailwind CSS)
+- **Automerge**: `@automerge/automerge-repo` v2.4
+- **Storage**: IndexedDB for persistence
+- **Sync**: WebSocket adapter
 
-**CLI**: Rust + `samod` (Rust automerge-repo) + `autosurgeon`
-- Connects via WebSocket to same sync server
-- Uses autosurgeon for type-safe document handling
-- Automatic serialization between Rust structs and Automerge documents
+### CLI
+- **Language**: Rust
+- **Automerge**: `autosurgeon` v0.9 (derive macros)
+- **Repo**: `samod` v0.5 (Rust automerge-repo)
+- **Type Safety**: Compile-time schema validation
 
-**Sync Server**: Standard automerge-repo sync server
+### Sync Server
+- Standard automerge-repo WebSocket server
 - No customization needed
-- Just handles message routing
+- Handles message routing and sync protocol
 
-## Key Implementation Details
+## Type-Safe Rust Schema
 
-### JavaScript Side (Frontend)
-Creates Automerge documents with simple structure:
-```typescript
-interface Doc {
-  counter: number;
-  notes: string;           // Stored as Automerge Text
-  collaborators: string[]; // Array of Automerge Text objects
-}
-```
-
-### Rust Side (CLI)
-Uses autosurgeon for ergonomic document handling:
 ```rust
-#[derive(Reconcile, Hydrate, Default)]
+#[derive(Reconcile, Hydrate)]
 struct Doc {
-    counter: Counter,        // CRDT counter type
-    notes: String,           // Auto-handles Text compatibility
+    counter: i64,
+    temperature: i64,
+    darkMode: bool,
+    notes: String,
+    todos: Vec<TodoItem>,
+    tags: Vec<String>,
     collaborators: Vec<String>,
+    metadata: Metadata,
+    stats: Stats,
 }
-
-// Reading from document
-let state: Doc = hydrate(doc).unwrap_or_default();
-
-// Writing to document
-state.counter.increment(1);
-doc.transact(|tx| reconcile(tx, &state))?;
 ```
 
-**Key benefit**: Autosurgeon automatically handles JS/Rust type compatibility (Text objects, lists, etc.) without manual type checking.
+**Benefits:**
+- Compile-time schema validation
+- Automatic JS/Rust type compatibility
+- Single `hydrate()` call to read entire document
+- Single `reconcile()` call to write changes
+- No manual type checking or conversion
 
-## Document Flow
+## CLI Usage
 
-1. User opens browser → creates document → gets URL with document ID
-2. Document stored locally (IndexedDB) and synced to server
-3. CLI connects with document ID → fetches from sync server
-4. CLI makes changes → syncs back to server → appears in browser
-5. All clients stay in sync through CRDT merge operations
+### URL Flexibility
 
-## What You'll Learn
+Accept both formats:
+```bash
+# Plain automerge URL
+cargo run --release --bin automerge-cli -- automerge:ABC123 show
 
-1. **Automerge basics**: Creating, reading, modifying CRDT documents
-2. **Autosurgeon**: Type-safe document handling with derive macros
-3. **Cross-platform sync**: Making JS and Rust play nicely together
-4. **Type handling**: Automatic compatibility across platforms
-5. **Sync protocols**: How automerge-repo coordinates clients
+# Full browser URL (copy-paste from address bar)
+cargo run --release --bin automerge-cli -- "http://localhost:5173/#automerge:ABC123" show
+```
 
-See [AUTOSURGEON_MIGRATION.md](./AUTOSURGEON_MIGRATION.md) for details on the type-safe approach.
+### View State
 
-## Known Issues
+```bash
+cargo run --release --bin automerge-cli -- <url> show
+```
 
-**Sync timing**: CLI sleeps 2 seconds after connecting to ensure document is fully synced. Proper solution would be listening for sync completion events from samod (TODO).
+Output displays:
+- All scalar values (counter, temperature, dark mode)
+- Text content preview
+- List counts (todos, tags, collaborators)
+- Metadata (title, edits, active users)
+- Detailed lists (todos with IDs, tags, collaborators)
+
+### All Commands
+
+```bash
+# Counters
+increment, decrement, set-counter <value>
+
+# Temperature
+set-temp <0-40>
+
+# Dark mode
+toggle-dark, set-dark <true|false>
+
+# Text
+add-note <text>
+
+# Todos
+add-todo <text>
+toggle-todo <id>  # Use first 8 chars of ID
+delete-todo <id>
+
+# Tags
+add-tag <tag>
+remove-tag <tag>
+
+# Collaborators
+add-user <name>
+
+# View
+show  # Default if no command specified
+```
+
+## CRDT Benefits Demonstrated
+
+### Counter
+Concurrent increments merge correctly. Two users clicking "+1" simultaneously results in "+2", not a conflict.
+
+### Text
+Character-level merging. Multiple users can type in different parts of the notes simultaneously without conflicts.
+
+### Lists
+Operations (insert, delete, reorder) merge based on position and causality, not indices.
+
+### Maps/Objects
+Field-level merging. Changes to different fields don't conflict.
+
+### Timestamps
+Last-write-wins for scalar values. Automerge tracks causality to resolve conflicts deterministically.
+
+## Key Features
+
+**Offline-First:**
+- Works without network connection
+- Syncs automatically when reconnected
+- All changes preserved and merged
+
+**Conflict-Free:**
+- CRDTs guarantee convergence
+- No merge conflicts
+- Deterministic conflict resolution
+
+**Real-Time:**
+- Changes sync instantly
+- Sub-second latency
+- Live cursor tracking (UI-level, not demonstrated)
+
+**Type-Safe:**
+- Rust side has compile-time guarantees
+- JS side has TypeScript interfaces
+- Autosurgeon handles serialization
+
+## Development
+
+### Frontend
+```bash
+cd frontend
+npm install
+npm run dev      # Dev server
+npm run build    # Production build
+npm run lint     # ESLint
+```
+
+### CLI
+```bash
+cd cli
+cargo build --release    # Optimized build
+cargo run -- <url> show  # Quick test (debug build)
+cargo test              # Run tests
+```
+
+### Sync Server
+```bash
+# Run locally
+pnpx @automerge/automerge-repo-sync-server
+
+# Or install globally
+npm install -g @automerge/automerge-repo-sync-server
+automerge-repo-sync-server
+```
+
+## Technical Highlights
+
+### Autosurgeon Integration
+Eliminated ~80 lines of manual serialization code by using derive macros. Compare:
+
+**Before:**
+```rust
+let counter = doc.get(ROOT, "counter")?;
+let notes = match doc.get(ROOT, "notes")? {
+    Some((Value::Object(ObjType::Text), id)) => doc.text(&id)?,
+    Some((Value::Scalar(s), _)) => s.to_str().unwrap_or(""),
+    // ... more pattern matching
+};
+```
+
+**After:**
+```rust
+let state: Doc = hydrate(doc)?;
+println!("Counter: {}", state.counter);
+println!("Notes: {}", state.notes);
+```
+
+### Field Name Mapping
+JS uses camelCase, Rust uses snake_case. Solution: Use camelCase in Rust with `#![allow(non_snake_case)]` for exact field name matching.
+
+### Browser URL Parsing
+CLI accepts full browser URLs. Extracts document ID from `#automerge:` fragment:
+```rust
+let doc_id = if let Some(pos) = url.find("#automerge:") {
+    &url[pos + 11..]
+} else if url.starts_with("automerge:") {
+    url.strip_prefix("automerge:").unwrap()
+} else {
+    bail!("URL must contain 'automerge:' or '#automerge:'")
+};
+```
 
 ## Resources
 
 - [Automerge](https://automerge.org) - CRDT library
-- [Automerge Repo](https://github.com/automerge/automerge-repo) - JS implementation
-- [Samod](https://docs.rs/samod) - Rust implementation
-- [Sync Server](https://github.com/automerge/automerge-repo-sync-server) - Reference server
+- [Automerge Repo](https://github.com/automerge/automerge-repo) - Sync and storage
+- [Autosurgeon](https://docs.rs/autosurgeon) - Rust derive macros
+- [Samod](https://docs.rs/samod) - Rust automerge-repo implementation
+- [shadcn/ui](https://ui.shadcn.com) - UI components
+- [CRDT Tech](https://crdt.tech) - CRDT resources
 
 ## License
 
