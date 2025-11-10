@@ -476,7 +476,7 @@ function App() {
             </CardHeader>
             <CardContent>
               <Textarea
-                value={doc.notes || ""}
+                value={getString(doc.notes)}
                 onChange={(e) => updateNotes(e.target.value)}
                 placeholder="Start typing... changes sync in real-time!"
                 rows={5}
