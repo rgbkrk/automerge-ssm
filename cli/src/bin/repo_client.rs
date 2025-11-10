@@ -392,7 +392,11 @@ async fn main() -> Result<()> {
         doc_data.display();
     }
 
-    // Clean up
+    // Give time for final messages to flush before disconnecting
+    tracing::debug!("Waiting for sync to complete...");
+    sleep(Duration::from_millis(100)).await;
+
+    // Clean up connection tasks
     ws_to_samod_handle.abort();
     samod_to_ws_handle.abort();
 
