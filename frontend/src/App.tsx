@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Repo, DocHandle, type AutomergeUrl } from "@automerge/automerge-repo";
 import { BrowserWebSocketClientAdapter } from "@automerge/automerge-repo-network-websocket";
 import { IndexedDBStorageAdapter } from "@automerge/automerge-repo-storage-indexeddb";
+import { ImmutableString } from "@automerge/automerge";
 import {
   Card,
   CardContent,
@@ -20,8 +21,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Minus, Trash2, Copy, Check } from "lucide-react";
 
 interface TodoItem {
-  id: string;
-  text: string;
+  id: ImmutableString | string;
+  text: ImmutableString | string;
   completed: boolean;
 }
 
@@ -32,17 +33,17 @@ interface Doc {
   darkMode: boolean;
 
   // Text type (CRDT)
-  notes: string;
+  notes: ImmutableString | string;
 
   // List types
   todos: TodoItem[];
-  tags: string[];
+  tags: (ImmutableString | string)[];
 
   // Map/Object type
   metadata?: {
     createdAt?: number;
     lastModified?: number;
-    title?: string;
+    title?: ImmutableString | string;
   };
 }
 
@@ -65,14 +66,11 @@ function App() {
     return false;
   };
 
-  // Helper to safely extract string value from ImmutableString
-  // Handles both plain string and {val: string} object formats
-  const getString = (value: unknown): string => {
+  // Helper to convert ImmutableString or string to plain string
+  // ImmutableString.toString() returns the underlying string value
+  const toStr = (value: ImmutableString | string): string => {
     if (typeof value === "string") return value;
-    if (typeof value === "object" && value !== null && "val" in value) {
-      return String((value as { val: unknown }).val);
-    }
-    return String(value || "");
+    return value.toString();
   };
 
   // Sync darkMode state with document class
@@ -122,37 +120,7 @@ function App() {
 
       const updateDoc = () => {
         const currentDoc = handle.doc();
-        console.log("=== updateDoc called ===");
-        console.log("currentDoc:", currentDoc);
-        console.log("currentDoc type:", typeof currentDoc);
         if (currentDoc) {
-          console.log("currentDoc keys:", Object.keys(currentDoc));
-          console.log(
-            "currentDoc.counter:",
-            currentDoc.counter,
-            "type:",
-            typeof currentDoc.counter,
-          );
-          console.log(
-            "currentDoc.temperature:",
-            currentDoc.temperature,
-            "type:",
-            typeof currentDoc.temperature,
-          );
-          console.log(
-            "currentDoc.darkMode:",
-            currentDoc.darkMode,
-            "type:",
-            typeof currentDoc.darkMode,
-          );
-          console.log(
-            "currentDoc.notes:",
-            currentDoc.notes,
-            "type:",
-            typeof currentDoc.notes,
-          );
-          console.log("currentDoc.todos:", currentDoc.todos);
-          console.log("currentDoc.tags:", currentDoc.tags);
           setDoc(currentDoc);
         }
       };
@@ -160,7 +128,6 @@ function App() {
       updateDoc();
 
       const changeListener = () => {
-        console.log("=== Change event received ===");
         updateDoc();
       };
       handle.on("change", changeListener);
@@ -253,7 +220,7 @@ function App() {
   const toggleTodo = (id: string) => {
     if (!docHandle) return;
     docHandle.change((d: Doc) => {
-      const todo = d.todos?.find((t) => getString(t.id) === id);
+      const todo = d.todos?.find((t) => toStr(t.id) === id);
       if (todo) {
         todo.completed = !todo.completed;
         if (!d.metadata) d.metadata = {};
@@ -266,7 +233,7 @@ function App() {
     if (!docHandle) return;
     docHandle.change((d: Doc) => {
       if (!d.todos) return;
-      const index = d.todos.findIndex((t) => getString(t.id) === id);
+      const index = d.todos.findIndex((t) => toStr(t.id) === id);
       if (index !== -1) {
         d.todos.splice(index, 1);
         if (!d.metadata) d.metadata = {};
@@ -442,7 +409,7 @@ function App() {
             </CardHeader>
             <CardContent>
               <Textarea
-                value={getString(doc.notes)}
+                value={toStr(doc.notes)}
                 onChange={(e) => updateNotes(e.target.value)}
                 placeholder="Start typing... changes sync in real-time!"
                 rows={3}
@@ -477,12 +444,12 @@ function App() {
                   {doc.todos && doc.todos.length > 0 ? (
                     doc.todos.map((todo) => (
                       <div
-                        key={getString(todo.id)}
+                        key={toStr(todo.id)}
                         className="flex items-center gap-2 p-2 rounded-md border"
                       >
                         <Checkbox
                           checked={todo.completed}
-                          onCheckedChange={() => toggleTodo(getString(todo.id))}
+                          onCheckedChange={() => toggleTodo(toStr(todo.id))}
                         />
                         <span
                           className={`flex-1 text-sm ${
@@ -491,12 +458,12 @@ function App() {
                               : ""
                           }`}
                         >
-                          {getString(todo.text)}
+                          {toStr(todo.text)}
                         </span>
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => deleteTodo(getString(todo.id))}
+                          onClick={() => deleteTodo(toStr(todo.id))}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -537,10 +504,10 @@ function App() {
                 <div className="flex flex-wrap gap-2">
                   {doc.tags && doc.tags.length > 0 ? (
                     doc.tags.map((tag) => (
-                      <Badge key={getString(tag)} variant="secondary">
-                        {getString(tag)}
+                      <Badge key={toStr(tag)} variant="secondary">
+                        {toStr(tag)}
                         <button
-                          onClick={() => removeTag(getString(tag))}
+                          onClick={() => removeTag(toStr(tag))}
                           className="ml-2 hover:text-destructive"
                         >
                           ×
@@ -575,7 +542,9 @@ function App() {
                     Title
                   </p>
                   <p className="text-lg font-semibold">
-                    {getString(doc.metadata?.title) || "Untitled"}
+                    {doc.metadata?.title
+                      ? toStr(doc.metadata.title)
+                      : "Untitled"}
                   </p>
                 </div>
                 <div>

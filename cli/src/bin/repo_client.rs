@@ -78,39 +78,7 @@ struct TodoItem {
     completed: bool,
 }
 
-// Helper function to hydrate strings that might be stored as Text objects (from JS)
-// or as scalar strings (from Rust)
-fn hydrate_string_or_text<D: autosurgeon::ReadDoc>(
-    doc: &D,
-    obj: &automerge::ObjId,
-    prop: autosurgeon::Prop,
-) -> Result<String, autosurgeon::HydrateError> {
-    use automerge::{ObjType, Value};
 
-    tracing::debug!("hydrate_string_or_text: prop={:?}", prop);
-    match doc.get(obj, &prop)? {
-        Some((Value::Scalar(s), _)) => {
-            // Scalar string - direct case
-            Ok(s.to_str()
-                .ok_or_else(|| autosurgeon::HydrateError::unexpected("string", format!("scalar {:?}", s)))?
-                .to_string())
-        }
-        Some((Value::Object(ObjType::Text), text_obj)) => {
-            // Text object - from JavaScript
-            doc.text(&text_obj).map_err(|e| {
-                autosurgeon::HydrateError::unexpected("text object", format!("error reading text: {}", e))
-            })
-        }
-        Some((val, _)) => {
-            tracing::error!("hydrate_string_or_text: unexpected value type for prop={:?}, val={:?}", prop, val);
-            Err(autosurgeon::HydrateError::unexpected("string or text", format!("{:?}", val)))
-        }
-        None => {
-            tracing::debug!("hydrate_string_or_text: prop={:?} is None, returning empty string", prop);
-            Ok(String::new())
-        }
-    }
-}
 
 // Helper function to hydrate Option<String> that might be stored as Text object (from JS)
 fn hydrate_optional_string_or_text<D: autosurgeon::ReadDoc>(
