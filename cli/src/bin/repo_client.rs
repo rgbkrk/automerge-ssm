@@ -7,7 +7,7 @@
 //!   cargo run --bin automerge-cli -- <automerge-url> [command]
 
 use anyhow::{Context, Result};
-use automerge::{transaction::Transactable, ObjType, ReadDoc};
+use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
 use clap::{Parser, Subcommand};
 use futures_util::StreamExt;
 use std::convert::Infallible;
@@ -19,7 +19,10 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 #[command(name = "automerge-cli")]
 #[command(about = "CLI client for Automerge documents using samod", long_about = None)]
 struct Cli {
-    /// Automerge document URL (e.g., automerge:4VgLSsiuVNfWeZk17m85GgA18VVp)
+    /// Automerge document URL or full browser URL
+    /// Examples:
+    ///   automerge:4VgLSsiuVNfWeZk17m85GgA18VVp
+    ///   http://localhost:5173/#automerge:4VgLSsiuVNfWeZk17m85GgA18VVp
     #[arg(value_name = "URL")]
     doc_url: String,
 
@@ -47,7 +50,7 @@ enum Command {
     Show,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Reconcile, Hydrate)]
 struct Doc {
     counter: i64,
     notes: String,
@@ -55,18 +58,6 @@ struct Doc {
 }
 
 impl Doc {
-    fn from_automerge(doc: &automerge::Automerge) -> Result<Self> {
-        let counter = get_counter(doc);
-        let notes = get_notes(doc)?;
-        let collaborators = get_collaborators(doc)?;
-
-        Ok(Doc {
-            counter,
-            notes,
-            collaborators,
-        })
-    }
-
     fn display(&self) {
         println!("\n📄 Document State:");
         println!("  Counter: {}", self.counter);
@@ -87,157 +78,52 @@ impl Doc {
     }
 }
 
-fn get_counter(doc: &automerge::Automerge) -> i64 {
-    match doc.get(automerge::ROOT, "counter") {
-        Ok(Some((automerge::Value::Scalar(s), _))) => s.to_i64().unwrap_or(0),
-        _ => 0,
-    }
-}
+async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Result<()> {
+    doc_handle.with_document(|doc| {
+        // Hydrate current state from document
+        let mut state: Doc = hydrate(doc).unwrap_or_default();
 
-fn get_notes(doc: &automerge::Automerge) -> Result<String> {
-    match doc.get(automerge::ROOT, "notes") {
-        Ok(Some((automerge::Value::Scalar(s), _))) => {
-            Ok(s.to_str().map(|s| s.to_string()).unwrap_or_default())
-        }
-        Ok(Some((automerge::Value::Object(ObjType::Text), obj_id))) => {
-            doc.text(&obj_id).context("Failed to read text object")
-        }
-        Ok(None) => Ok(String::new()),
-        Ok(Some((val, _))) => {
-            anyhow::bail!("Unexpected type for notes field: {:?}", val)
-        }
-        Err(e) => Err(e).context("Failed to get notes field"),
-    }
-}
-
-fn get_collaborators(doc: &automerge::Automerge) -> Result<Vec<String>> {
-    match doc.get(automerge::ROOT, "collaborators") {
-        Ok(Some((automerge::Value::Object(ObjType::List), id))) => {
-            let len = doc.length(&id);
-            let mut collaborators = Vec::new();
-
-            for i in 0..len {
-                match doc.get(&id, i) {
-                    Ok(Some((automerge::Value::Scalar(s), _))) => {
-                        if let Some(text) = s.to_str() {
-                            collaborators.push(text.to_string());
-                        }
-                    }
-                    Ok(Some((automerge::Value::Object(ObjType::Text), obj_id))) => {
-                        if let Ok(text) = doc.text(&obj_id) {
-                            collaborators.push(text);
-                        }
-                    }
-                    _ => continue,
+        // Apply command to local state
+        match command {
+            Command::Increment => {
+                state.counter += 1;
+                tracing::debug!("Incremented counter to {}", state.counter);
+            }
+            Command::Decrement => {
+                state.counter -= 1;
+                tracing::debug!("Decremented counter to {}", state.counter);
+            }
+            Command::SetCounter { value } => {
+                state.counter = *value;
+                tracing::debug!("Set counter to {}", value);
+            }
+            Command::AddNote { text } => {
+                if state.notes.is_empty() {
+                    state.notes = text.clone();
+                } else {
+                    state.notes = format!("{}\n{}", state.notes, text);
+                }
+                tracing::debug!("Added note");
+            }
+            Command::AddUser { name } => {
+                if !state.collaborators.contains(name) {
+                    state.collaborators.push(name.clone());
+                    tracing::debug!("Added collaborator: {}", name);
+                } else {
+                    tracing::debug!("User '{}' already exists", name);
                 }
             }
-            Ok(collaborators)
+            Command::Show => {
+                // No changes needed
+            }
         }
-        Ok(None) => Ok(Vec::new()),
-        Ok(Some((val, _))) => {
-            anyhow::bail!("Unexpected type for collaborators field: {:?}", val)
-        }
-        Err(e) => Err(e).context("Failed to get collaborators field"),
-    }
-}
 
-async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Result<()> {
-    match command {
-        Command::Increment => {
-            doc_handle.with_document(|doc| {
-                let current = get_counter(doc);
-                doc.transact(|tx| {
-                    tx.put(automerge::ROOT, "counter", current + 1)?;
-                    Ok::<_, automerge::AutomergeError>(())
-                }).expect("Failed to increment counter");
-            });
-            tracing::debug!("Incremented counter");
-        }
-        Command::Decrement => {
-            doc_handle.with_document(|doc| {
-                let current = get_counter(doc);
-                doc.transact(|tx| {
-                    tx.put(automerge::ROOT, "counter", current - 1)?;
-                    Ok::<_, automerge::AutomergeError>(())
-                }).expect("Failed to decrement counter");
-            });
-            tracing::debug!("Decremented counter");
-        }
-        Command::SetCounter { value } => {
-            doc_handle.with_document(|doc| {
-                doc.transact(|tx| {
-                    tx.put(automerge::ROOT, "counter", *value)?;
-                    Ok::<_, automerge::AutomergeError>(())
-                }).expect("Failed to set counter");
-            });
-            tracing::debug!("Set counter to {}", value);
-        }
-        Command::AddNote { text } => {
-            doc_handle.with_document(|doc| {
-                doc.transact(|tx| {
-                    // Get existing notes
-                    let notes_obj = match tx.get(automerge::ROOT, "notes")? {
-                        Some((automerge::Value::Object(ObjType::Text), id)) => id,
-                        _ => {
-                            // Create as Text object for JS compatibility
-                            tx.put_object(automerge::ROOT, "notes", ObjType::Text)?
-                        }
-                    };
+        // Reconcile changes back to document
+        doc.transact(|tx| {
+            reconcile(tx, &state)
+        }).expect("Failed to reconcile document");
+    });
 
-                    // Get current text
-                    let current = tx.text(&notes_obj)?;
-                    let new_text = if current.is_empty() {
-                        text.clone()
-                    } else {
-                        format!("{}\n{}", current, text)
-                    };
-
-                    // Replace all text
-                    tx.splice_text(&notes_obj, 0, current.len() as isize, &new_text)?;
-                    Ok::<_, automerge::AutomergeError>(())
-                }).expect("Failed to add note");
-            });
-            tracing::debug!("Added note");
-        }
-        Command::AddUser { name } => {
-            doc_handle.with_document(|doc| {
-                doc.transact(|tx| {
-                    // Get or create collaborators list
-                    let collaborators = match tx.get(automerge::ROOT, "collaborators")? {
-                        Some((automerge::Value::Object(ObjType::List), id)) => id,
-                        _ => tx.put_object(automerge::ROOT, "collaborators", ObjType::List)?,
-                    };
-
-                    // Check if user already exists
-                    let len = tx.length(&collaborators);
-                    let mut exists = false;
-                    for i in 0..len {
-                        if let Ok(Some((automerge::Value::Object(ObjType::Text), obj_id))) = tx.get(&collaborators, i) {
-                            if let Ok(text) = tx.text(&obj_id) {
-                                if text == *name {
-                                    exists = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    if !exists {
-                        // Insert as scalar string to match JS behavior
-                        tx.insert(&collaborators, len, name.as_str())?;
-                        tracing::debug!("Added collaborator: {}", name);
-                    } else {
-                        tracing::debug!("User '{}' already exists", name);
-                    }
-
-                    Ok::<_, automerge::AutomergeError>(())
-                }).expect("Failed to add user");
-            });
-        }
-        Command::Show => {
-            // Just display, no changes
-        }
-    }
     Ok(())
 }
 
@@ -260,12 +146,19 @@ async fn main() -> Result<()> {
     let doc_url = &cli.doc_url;
     let command = cli.command.unwrap_or(Command::Show);
 
-    // Parse the automerge URL
-    if !doc_url.starts_with("automerge:") {
-        anyhow::bail!("URL must start with 'automerge:' - got: {}", doc_url);
-    }
-
-    let doc_id_str = doc_url.strip_prefix("automerge:").unwrap();
+    // Parse the automerge URL - accept both plain URLs and browser URLs
+    let doc_id_str = if let Some(hash_pos) = doc_url.find("#automerge:") {
+        // Extract from browser URL: http://localhost:5173/#automerge:DOCID
+        &doc_url[hash_pos + 11..] // Skip "#automerge:"
+    } else if doc_url.starts_with("automerge:") {
+        // Plain automerge URL: automerge:DOCID
+        doc_url.strip_prefix("automerge:").unwrap()
+    } else {
+        anyhow::bail!(
+            "URL must contain 'automerge:' or '#automerge:' - got: {}",
+            doc_url
+        );
+    };
 
     tracing::debug!("Initializing automerge-repo");
 
@@ -374,9 +267,9 @@ async fn main() -> Result<()> {
         println!("\n📄 Before:");
     }
 
-    let doc_data = doc_handle.with_document(|doc| {
-        Doc::from_automerge(doc)
-    })?;
+    let doc_data: Doc = doc_handle.with_document(|doc| {
+        hydrate(doc).unwrap_or_default()
+    });
 
     doc_data.display();
 
@@ -385,9 +278,9 @@ async fn main() -> Result<()> {
         execute_command(&doc_handle, &command).await?;
 
         println!("\n📄 After:");
-        let doc_data = doc_handle.with_document(|doc| {
-            Doc::from_automerge(doc)
-        })?;
+        let doc_data: Doc = doc_handle.with_document(|doc| {
+            hydrate(doc).unwrap_or_default()
+        });
         doc_data.display();
     }
 

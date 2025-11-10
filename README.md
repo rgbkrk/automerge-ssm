@@ -53,10 +53,10 @@ Browser (JS)  ──┘
 - IndexedDB for local persistence
 - Standard automerge-repo setup
 
-**CLI**: Rust + `samod` (Rust automerge-repo)
+**CLI**: Rust + `samod` (Rust automerge-repo) + `autosurgeon`
 - Connects via WebSocket to same sync server
-- Reads/writes using Automerge API directly
-- Handles Text objects from JS (important for compatibility!)
+- Uses autosurgeon for type-safe document handling
+- Automatic serialization between Rust structs and Automerge documents
 
 **Sync Server**: Standard automerge-repo sync server
 - No customization needed
@@ -75,22 +75,24 @@ interface Doc {
 ```
 
 ### Rust Side (CLI)
-Must handle JavaScript's Text objects:
+Uses autosurgeon for ergonomic document handling:
 ```rust
-// Reading Text objects from JS
-match doc.get(ROOT, "notes") {
-    Ok(Some((Value::Object(ObjType::Text), obj_id))) => {
-        doc.text(&obj_id)? // Extract text
-    }
-    // ...
+#[derive(Reconcile, Hydrate, Default)]
+struct Doc {
+    counter: Counter,        // CRDT counter type
+    notes: String,           // Auto-handles Text compatibility
+    collaborators: Vec<String>,
 }
 
-// Writing Text objects for JS compatibility
-let text_obj = tx.put_object(ROOT, "notes", ObjType::Text)?;
-tx.splice_text(&text_obj, 0, 0, "content")?;
+// Reading from document
+let state: Doc = hydrate(doc).unwrap_or_default();
+
+// Writing to document
+state.counter.increment(1);
+doc.transact(|tx| reconcile(tx, &state))?;
 ```
 
-**Critical**: JS stores strings as Text objects. Rust must handle both Text and Scalar types when reading, and write Text for JS compatibility.
+**Key benefit**: Autosurgeon automatically handles JS/Rust type compatibility (Text objects, lists, etc.) without manual type checking.
 
 ## Document Flow
 
@@ -103,10 +105,12 @@ tx.splice_text(&text_obj, 0, 0, "content")?;
 ## What You'll Learn
 
 1. **Automerge basics**: Creating, reading, modifying CRDT documents
-2. **Cross-platform sync**: Making JS and Rust play nicely together
-3. **Type handling**: Text vs Scalar types across platforms
-4. **Sync protocols**: How automerge-repo coordinates clients
-5. **Error handling**: Proper validation vs silent failures
+2. **Autosurgeon**: Type-safe document handling with derive macros
+3. **Cross-platform sync**: Making JS and Rust play nicely together
+4. **Type handling**: Automatic compatibility across platforms
+5. **Sync protocols**: How automerge-repo coordinates clients
+
+See [AUTOSURGEON_MIGRATION.md](./AUTOSURGEON_MIGRATION.md) for details on the type-safe approach.
 
 ## Known Issues
 
