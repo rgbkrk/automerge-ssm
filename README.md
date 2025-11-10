@@ -20,6 +20,12 @@ This project showcases Automerge's capabilities for building local-first, multip
 - 🌐 WebSocket synchronization
 - 🦀 Rust backend integration
 
+## 🚀 Quick Start
+
+**Want to jump right in?** See [QUICK_START.md](QUICK_START.md) for a one-page guide to get up and running in minutes.
+
+For detailed explanations and architecture info, continue reading below or check out [DEMO.md](DEMO.md).
+
 ## Prerequisites
 
 - Node.js (v18+)
