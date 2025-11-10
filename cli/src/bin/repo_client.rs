@@ -223,9 +223,8 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                     }
 
                     if !exists {
-                        // Insert as Text object for JS compatibility
-                        let text_obj = tx.insert_object(&collaborators, len, ObjType::Text)?;
-                        tx.splice_text(&text_obj, 0, 0, name)?;
+                        // Insert as scalar string to match JS behavior
+                        tx.insert(&collaborators, len, name.as_str())?;
                         tracing::debug!("Added collaborator: {}", name);
                     } else {
                         tracing::debug!("User '{}' already exists", name);
