@@ -1,5 +1,5 @@
 use anyhow::Result;
-use automerge::{AutoCommit, ReadDoc};
+use automerge::AutoCommit;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -122,7 +122,7 @@ async fn handle_text_message(
         ClientMessage::GetDocument { doc_id } => {
             let docs = documents.read().await;
             if let Some(doc_lock) = docs.get(&doc_id) {
-                let doc = doc_lock.read().await;
+                let mut doc = doc_lock.write().await;
                 let data = doc.save();
 
                 let response = ServerMessage::Document {
@@ -137,7 +137,7 @@ async fn handle_text_message(
                 }
             }
         }
-        ClientMessage::Sync { doc_id, sync_message } => {
+        ClientMessage::Sync { doc_id, sync_message: _ } => {
             // This would need proper Automerge sync protocol implementation
             info!("Received sync message for doc: {}", doc_id);
         }
