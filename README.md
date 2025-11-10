@@ -19,6 +19,7 @@ This project showcases Automerge's capabilities for building local-first, multip
 - 💾 Persistent storage (IndexedDB on frontend)
 - 🌐 WebSocket synchronization
 - 🦀 Rust backend integration
+- 🔧 Rust CLI client for server-side document manipulation
 
 ## 🚀 Quick Start
 
@@ -79,6 +80,22 @@ npm run dev
 
 The frontend will start on `http://localhost:5173` (or similar)
 
+### Terminal 3 (Optional): Use the Rust CLI Client
+
+```bash
+# Get the document ID from your browser URL
+# Example: http://localhost:5173/#automerge:2mdM9TnM2sJgLhHhYjyBzfusSsyr
+#                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+# Increment the counter from Rust
+./rust-client.sh 2mdM9TnM2sJgLhHhYjyBzfusSsyr increment
+
+# Add a note from Rust
+./rust-client.sh 2mdM9TnM2sJgLhHhYjyBzfusSsyr add-note "Hello from Rust!"
+```
+
+**See [RUST_CLIENT.md](RUST_CLIENT.md) for full CLI documentation.**
+
 ## Usage
 
 1. Open the frontend URL in your browser
@@ -89,6 +106,7 @@ The frontend will start on `http://localhost:5173` (or similar)
    - Type in the shared notes - changes sync in real-time
    - Copy the share link and open it in another tab or browser
    - Watch as changes sync between all connected clients
+   - **Use the Rust CLI client to modify documents from the command line!**
 
 ## Architecture
 
@@ -200,6 +218,19 @@ The Rust server (`server/src/main.rs`) demonstrates:
 - Check that both server and frontend are running
 - Look for errors in server logs and browser console
 - Try refreshing the page
+
+## Rust CLI Client
+
+Want to modify documents from Rust? Use the CLI client:
+
+```bash
+./rust-client.sh <document-id> increment
+./rust-client.sh <document-id> add-note "From Rust!"
+```
+
+This demonstrates **true cross-platform collaboration** - changes from the Rust CLI appear instantly in all browser tabs!
+
+📖 **Full guide:** [RUST_CLIENT.md](RUST_CLIENT.md)
 
 ## Resources
 
