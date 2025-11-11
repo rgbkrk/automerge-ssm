@@ -359,7 +359,7 @@ function App() {
                   {doc.temperature}°C
                 </div>
                 <Slider
-                  value={[doc.temperature || 20]}
+                  value={[doc.temperature ?? 20]}
                   onValueChange={setTemperature}
                   min={0}
                   max={40}
