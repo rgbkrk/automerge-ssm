@@ -318,11 +318,101 @@ When you discover issues or improvements:
 3. **Commit with context** - Explain why, not just what
 4. **Consider upstream** - Is this an Automerge issue? Document for maintainers
 
+## Cross-Platform Type Solutions
+
+This section documents the solutions for proper TypeScript ↔ Rust type handling with Automerge CRDTs.
+
+### TypeScript: Union Types
+
+Use union types to handle both `ImmutableString` (from Rust) and `string` (from JavaScript):
+
+```typescript
+import { ImmutableString } from "@automerge/automerge";
+
+interface TodoItem {
+  id: ImmutableString | string;
+  text: ImmutableString | string;
+  completed: boolean;
+}
+
+// Simple conversion helper
+const toStr = (value: ImmutableString | string): string => {
+  if (typeof value === "string") return value;
+  return value.toString();  // ImmutableString has toString()
+};
+
+// Usage
+<span>{toStr(todo.text)}</span>
+const todo = todos.find(t => toStr(t.id) === targetId);
+```
+
+**Why this works**: Both `string` and `ImmutableString` have `.toString()`, so one helper handles both types with compile-time type safety.
+
+### Rust: Custom Hydration
+
+Use custom hydration to handle both scalar strings and Text CRDT objects from JavaScript:
+
+```rust
+#[derive(Debug, Clone, Reconcile, Hydrate)]
+struct TodoItem {
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
+    id: String,
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
+    text: String,
+    completed: bool,
+}
+
+fn hydrate_string_or_text<D: autosurgeon::ReadDoc>(
+    doc: &D,
+    obj: &automerge::ObjId,
+    prop: autosurgeon::Prop,
+) -> Result<String, autosurgeon::HydrateError> {
+    use automerge::{ObjType, Value};
+    match doc.get(obj, &prop)? {
+        Some((Value::Scalar(s), _)) => Ok(s.to_str()?.to_string()),
+        Some((Value::Object(ObjType::Text), text_obj)) => doc.text(&text_obj),
+        _ => Ok(String::new()),
+    }
+}
+```
+
+**Why this works**: JavaScript creates Text CRDT objects for string fields. Custom hydration handles both scalar strings (from Rust) and Text objects (from JavaScript).
+
+**Apply to**: All string fields that cross platform boundaries (id, text, notes, tags, title).
+
+### Character-Level Text Editing
+
+When implementing insert/delete at character positions, handle UTF-8 properly:
+
+```rust
+// Convert character position to byte index
+let byte_pos = state.notes
+    .char_indices()
+    .nth(position)
+    .map(|(idx, _)| idx)
+    .unwrap_or(state.notes.len());
+state.notes.insert_str(byte_pos, text);
+```
+
+**Why this matters**: Emoji and multi-byte characters span multiple bytes. Direct byte indexing can panic on invalid UTF-8 boundaries. `char_indices()` provides safe character→byte mapping.
+
+### Testing Cross-Platform Sync
+
+Checklist for verifying bidirectional sync:
+
+1. ✅ Create document in browser
+2. ✅ Modify fields in browser (todos, tags, notes)
+3. ✅ Read from Rust CLI - should hydrate successfully
+4. ✅ Modify from Rust CLI
+5. ✅ Verify changes appear in browser
+6. ✅ Test character-level edits with emoji
+7. ✅ Test concurrent modifications
+
 ## Resources
 
 - [Automerge Docs](https://automerge.org/docs/) - Full documentation
+- [Autosurgeon](https://docs.rs/autosurgeon) - Rust derive macros
 - `README.md` - Project setup and usage
-- `HANDOFF.md` - Current investigation status
 - Browser DevTools - Invaluable for debugging
 - Rust tracing output - Add `--verbose` flag to CLI
 

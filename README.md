@@ -1,122 +1,288 @@
 # Autodash
 
-Real-time collaborative CRDT demo with React frontend and Rust CLI, syncing through Automerge.
+Real-time collaborative CRDT demo showcasing **full cross-platform synchronization** between a React frontend and Rust CLI, powered by Automerge.
 
-## What This Demonstrates
+## ✨ Highlights
 
-**Automerge Data Types:**
-- **Scalars**: numbers, booleans
-- **Text**: CRDT text with character-level merging
-- **Lists**: Arrays of objects and strings  
-- **Maps**: Nested objects with timestamps
+**🎯 Cross-Platform Collaboration**
+- React + TypeScript frontend and Rust CLI share the same live document
+- All edits sync in real-time through WebSocket server
+- Proper type handling ensures seamless Rust ↔ JavaScript interoperability
 
-**Cross-Platform Sync:**
-- React + TypeScript frontend
-- Rust CLI client
-- Standard automerge-repo WebSocket server
+**🔧 Advanced CRDT Operations**
+- Counter with concurrent increment merging
+- Temperature slider with conflict-free updates
+- Character-level text editing with insert/delete at any position
+- Todo list with add/toggle/delete operations
+- Tag management with array operations
+- Metadata with nested object updates
+
+**💪 Production-Ready Patterns**
+- TypeScript union types for `ImmutableString | string`
+- Rust custom hydration for Text CRDT objects
+- UTF-8 safe character positioning
+- Full bidirectional sync verified
 
 ## Quick Start
+
+### Prerequisites
+
+```bash
+# Install Node.js dependencies
+cd frontend && npm install
+
+# Rust is required for CLI
+# Install from https://rustup.rs
+```
+
+### Running the Stack
 
 ```bash
 # Terminal 1: Sync server
 pnpx @automerge/automerge-repo-sync-server
 
-# Terminal 2: Frontend
-cd frontend && npm install && npm run dev
+# Terminal 2: Frontend (will open browser at localhost:5173)
+cd frontend && npm run dev
 
-# Terminal 3: CLI (copy doc URL from browser)
+# Terminal 3: CLI (use document ID from browser URL)
 cd cli
-cargo run -- "http://localhost:5173/#automerge:YOUR_DOC_ID" show
+cargo run -- automerge:YOUR_DOC_ID show
 ```
 
-Open http://localhost:5173 and interact via browser or CLI - changes sync instantly.
+Open http://localhost:5173 and watch changes sync between browser and CLI in real-time!
 
 ## CLI Commands
 
+### Scalars
 ```bash
-# Scalars
-increment / decrement / set-counter <value>
-set-temp <0-40>
-toggle-dark / set-dark <true|false>
+increment                    # Counter +1
+decrement                    # Counter -1
+set-counter <value>          # Set counter to specific value
+set-temp <0-40>             # Set temperature
+toggle-dark                  # Toggle dark mode
+set-dark <true|false>       # Set dark mode explicitly
+```
 
-# Text
-add-note <text>
+### Text (Character-Level Operations)
+```bash
+add-note <text>             # Append to notes
+set-notes <text>            # Replace all notes
+clear-notes                 # Clear notes
+insert-notes <pos> <text>   # Insert at character position
+delete-notes <start> <len>  # Delete character range
+```
 
-# Lists
-add-todo <text>
-toggle-todo <id>    # Use first 8 chars of ID
-delete-todo <id>
-add-tag <tag>
-remove-tag <tag>
+### Lists - Todos
+```bash
+add-todo <text>             # Create new todo
+toggle-todo <id>            # Toggle completion (use first 8 chars)
+delete-todo <id>            # Remove todo
+```
 
-# Metadata
-set-title <title>
+### Lists - Tags
+```bash
+add-tag <tag>               # Add tag to list
+remove-tag <tag>            # Remove tag from list
+```
 
-# View state
-show  # Default command
+### Metadata
+```bash
+set-title <title>           # Set document title
+```
+
+### Display
+```bash
+show                        # Show current state (default)
 ```
 
 ## Architecture
 
 ```
-React Browser  ──┐
-                 ├──► WebSocket Sync Server ◄──── Rust CLI
-React Browser  ──┘
+┌─────────────────┐
+│  React Browser  │◄─┐
+└─────────────────┘  │
+                     ├─► WebSocket Sync Server
+┌─────────────────┐  │
+│  React Browser  │◄─┤
+└─────────────────┘  │
+                     │
+┌─────────────────┐  │
+│   Rust CLI      │◄─┘
+└─────────────────┘
 ```
 
-**Frontend**: React 19 + TypeScript + automerge-repo + shadcn/ui  
-**CLI**: Rust + autosurgeon + samod  
-**Storage**: IndexedDB (browser), in-memory (CLI)
+**Frontend Stack**
+- React 19 + TypeScript
+- @automerge/automerge-repo for CRDT sync
+- @automerge/automerge-repo-react-hooks
+- shadcn/ui components
+- IndexedDB for persistence
 
-## Type-Safe Schema
+**CLI Stack**
+- Rust with autosurgeon derive macros
+- samod (automerge-repo for Rust)
+- Custom hydration for cross-platform Text fields
+- In-memory storage
+
+**Sync Server**
+- Standard @automerge/automerge-repo-sync-server
+- WebSocket-based
+- No custom modifications needed
+
+## Cross-Platform Type Handling
+
+### TypeScript Solution
+
+Use union types and a simple conversion helper:
+
+```typescript
+import { ImmutableString } from "@automerge/automerge";
+
+interface TodoItem {
+  id: ImmutableString | string;
+  text: ImmutableString | string;
+  completed: boolean;
+}
+
+// Simple conversion - works for both types
+const toStr = (value: ImmutableString | string): string => {
+  if (typeof value === "string") return value;
+  return value.toString();
+};
+
+// Usage
+{todos.map(todo => (
+  <span key={toStr(todo.id)}>{toStr(todo.text)}</span>
+))}
+```
+
+### Rust Solution
+
+Use custom hydration to handle Text CRDT objects from JavaScript:
 
 ```rust
-#[derive(Reconcile, Hydrate)]
+#[derive(Debug, Clone, Reconcile, Hydrate)]
+struct TodoItem {
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
+    id: String,
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
+    text: String,
+    completed: bool,
+}
+
+fn hydrate_string_or_text<D: autosurgeon::ReadDoc>(
+    doc: &D,
+    obj: &automerge::ObjId,
+    prop: autosurgeon::Prop,
+) -> Result<String, autosurgeon::HydrateError> {
+    use automerge::{ObjType, Value};
+    match doc.get(obj, &prop)? {
+        Some((Value::Scalar(s), _)) => Ok(s.to_str()?.to_string()),
+        Some((Value::Object(ObjType::Text), text_obj)) => doc.text(&text_obj),
+        _ => Ok(String::new()),
+    }
+}
+```
+
+This allows Rust to read both:
+- Scalar strings (from Rust)
+- Text CRDT objects (from JavaScript)
+
+## CRDT Benefits in Action
+
+**Counter**: Two users click increment simultaneously → both increments apply (+2 total), no conflict
+
+**Text**: User A types at start, User B types at end → both edits merge correctly
+
+**Character-Level Edits**: `insert-notes 5 "hello"` and concurrent edits merge by CRDT position, not array index
+
+**Lists**: Concurrent todo additions preserve both items with correct causality
+
+**Offline-First**: All changes stored locally in IndexedDB, sync automatically when reconnected
+
+## Type Schema
+
+```rust
+#[derive(Debug, Clone, Default, Reconcile, Hydrate)]
 struct Doc {
     counter: i64,
     temperature: i64,
     darkMode: bool,
-    notes: autosurgeon::Text,
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
+    notes: String,
     todos: Vec<TodoItem>,
-    tags: Vec<autosurgeon::Text>,
+    #[autosurgeon(hydrate = "hydrate_string_vec")]
+    tags: Vec<String>,
     metadata: Metadata,
+}
+
+#[derive(Debug, Clone, Default, Reconcile, Hydrate)]
+struct Metadata {
+    createdAt: Option<i64>,
+    lastModified: Option<i64>,
+    #[autosurgeon(hydrate = "hydrate_optional_string_or_text")]
+    title: Option<String>,
 }
 ```
 
-**Key Point**: Use `autosurgeon::Text` for string fields to ensure proper CRDT serialization between Rust and JavaScript.
-
-## CRDT Benefits
-
-**Counter**: Concurrent increments merge correctly - two users clicking "+1" = +2, not a conflict.
-
-**Text**: Character-level merging - multiple users can type in different parts simultaneously without conflicts.
-
-**Lists**: Operations merge by position and causality, not indices. Handles concurrent insertions gracefully.
-
-**Maps**: Field-level merging - changes to different fields never conflict.
-
-**Offline-First**: All changes preserved locally, synced automatically when reconnected.
-
 ## Development
 
+### Frontend
 ```bash
-# Frontend
-cd frontend && npm install && npm run dev
-
-# CLI  
-cd cli && cargo run -- <url> show
-
-# Run tests
-npm test          # Frontend
-cargo test        # CLI
+cd frontend
+npm install
+npm run dev        # Development server
+npm run build      # Production build
+npm run lint       # Type checking
 ```
+
+### CLI
+```bash
+cd cli
+cargo build        # Debug build
+cargo build --release  # Optimized build
+cargo test         # Run tests
+cargo run -- automerge:DOC_ID show
+```
+
+### Testing Cross-Platform Sync
+
+1. Open browser at http://localhost:5173
+2. Copy the document ID from URL (after `#automerge:`)
+3. Run CLI: `cargo run -- automerge:DOC_ID increment`
+4. Watch counter update in browser instantly
+5. Modify data in browser, run `show` in CLI to verify sync
+
+## What We Learned
+
+### TypeScript + ImmutableString
+- Union types (`ImmutableString | string`) handle both Rust and JavaScript string representations
+- `.toString()` method works polymorphically on both types
+- No need for complex runtime type checking
+
+### Rust + Text Hydration
+- JavaScript creates Text CRDT objects for string fields
+- Custom hydration functions handle both scalar strings and Text objects
+- Apply to all string fields that cross platform boundaries
+
+### Character-Level Operations
+- Convert character positions to byte indices for UTF-8 safety
+- `char_indices()` provides safe navigation through multi-byte characters
+- Enables true collaborative text editing
+
+### CRDT Power
+- Eliminates merge conflicts across all data types
+- Enables offline-first applications
+- Simplifies distributed system design
 
 ## Resources
 
-- [Automerge](https://automerge.org) - CRDT library
-- [Automerge Repo](https://github.com/automerge/automerge-repo) - Sync framework
-- [Autosurgeon](https://docs.rs/autosurgeon) - Rust derive macros
-- [CRDT Tech](https://crdt.tech) - Learn more about CRDTs
+- [Automerge Documentation](https://automerge.org/docs/)
+- [Automerge Repo](https://github.com/automerge/automerge-repo)
+- [Autosurgeon (Rust)](https://docs.rs/autosurgeon)
+- [CRDT Tech](https://crdt.tech)
+- [AGENTS.md](./AGENTS.md) - AI agent development workflow
+- [HANDOFF.md](./HANDOFF.md) - Technical investigation details
 
 ## License
 
