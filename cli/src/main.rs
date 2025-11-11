@@ -256,7 +256,7 @@ impl Doc {
 }
 
 async fn heat_command(doc_handle: &samod::DocHandle) -> Result<()> {
-    println!("\n🔥 Heating with smooth easing... (press Ctrl+C to stop)");
+    println!("\n🔥 Heating with smooth ease-in... (press Ctrl+C to stop)");
     println!("Starting from 0°C, easing to 40°C\n");
 
     // Set temperature to 0
@@ -274,7 +274,7 @@ async fn heat_command(doc_handle: &samod::DocHandle) -> Result<()> {
     println!("🌡️  Temperature: 0°C");
     sleep(Duration::from_millis(200)).await;
 
-    // Ease-out animation: fast at start, slow at end
+    // Ease-in animation: slow at start, fast at end
     let target_temp = 40.0;
     let duration_ms = 8000.0; // 8 seconds total
     let start_time = std::time::Instant::now();
@@ -283,8 +283,8 @@ async fn heat_command(doc_handle: &samod::DocHandle) -> Result<()> {
         let elapsed_ms = start_time.elapsed().as_millis() as f64;
         let progress = (elapsed_ms / duration_ms).min(1.0);
 
-        // Ease-out cubic: fast start, slow end
-        let eased = 1.0 - (1.0 - progress).powf(3.0);
+        // Ease-in quadratic: slow start, fast end
+        let eased = progress.powf(2.0);
         let new_temp = (eased * target_temp).round() as i64;
 
         if new_temp >= 40 || progress >= 1.0 {
