@@ -256,43 +256,76 @@ impl Doc {
 }
 
 async fn heat_command(doc_handle: &samod::DocHandle) -> Result<()> {
-    println!("\n🔥 Heating... (press Ctrl+C to stop)");
-    println!("Increasing temperature by 1°C every 0.2 seconds\n");
+    println!("\n🔥 Heating with smooth easing... (press Ctrl+C to stop)");
+    println!("Starting from 0°C, easing to 40°C\n");
+
+    // Set temperature to 0
+    doc_handle.with_document(|doc| -> Result<()> {
+        let mut state: Doc = hydrate(doc)?;
+        state.temperature = 0;
+        state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+        doc.transact(|tx| {
+            reconcile(tx, &state)
+        })
+        .map_err(|e| anyhow::anyhow!("Failed to reconcile document: {:?}", e))?;
+        Ok(())
+    })?;
+
+    println!("🌡️  Temperature: 0°C");
+    sleep(Duration::from_millis(200)).await;
+
+    // Ease-out animation: fast at start, slow at end
+    let target_temp = 40.0;
+    let duration_ms = 8000.0; // 8 seconds total
+    let start_time = std::time::Instant::now();
 
     loop {
+        let elapsed_ms = start_time.elapsed().as_millis() as f64;
+        let progress = (elapsed_ms / duration_ms).min(1.0);
+
+        // Ease-out cubic: fast start, slow end
+        let eased = 1.0 - (1.0 - progress).powf(3.0);
+        let new_temp = (eased * target_temp).round() as i64;
+
+        if new_temp >= 40 || progress >= 1.0 {
+            // Final update to exactly 40
+            doc_handle.with_document(|doc| -> Result<()> {
+                let mut state: Doc = hydrate(doc)?;
+                state.temperature = 40;
+                state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+                doc.transact(|tx| {
+                    reconcile(tx, &state)
+                })
+                .map_err(|e| anyhow::anyhow!("Failed to reconcile document: {:?}", e))?;
+                Ok(())
+            })?;
+            println!("🌡️  Temperature: 40°C");
+            println!("🔥 Maximum temperature reached!");
+            break;
+        }
+
+        // Update temperature
+        doc_handle.with_document(|doc| -> Result<()> {
+            let mut state: Doc = hydrate(doc)?;
+            if state.temperature != new_temp {
+                state.temperature = new_temp;
+                state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+                doc.transact(|tx| {
+                    reconcile(tx, &state)
+                })
+                .map_err(|e| anyhow::anyhow!("Failed to reconcile document: {:?}", e))?;
+            }
+            Ok(())
+        })?;
+
         let current_temp: i64 = doc_handle.with_document(|doc| -> Result<i64> {
             let data: Doc = hydrate(doc)?;
             Ok(data.temperature)
         })?;
 
-        if current_temp >= 40 {
-            println!("🌡️  Maximum temperature reached: 40°C");
-            break;
-        }
+        println!("🌡️  Temperature: {}°C", current_temp);
 
-        doc_handle.with_document(|doc| -> Result<()> {
-            let mut state: Doc = hydrate(doc)?;
-            state.temperature = (state.temperature + 1).min(40);
-            state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
-            doc.transact(|tx| {
-                reconcile(tx, &state)
-            })
-            .map_err(|e| anyhow::anyhow!("Failed to reconcile document: {:?}", e))?;
-            Ok(())
-        })?;
-
-        let new_temp: i64 = doc_handle.with_document(|doc| -> Result<i64> {
-            let data: Doc = hydrate(doc)?;
-            Ok(data.temperature)
-        })?;
-
-        println!("🌡️  Temperature: {}°C", new_temp);
-
-        if new_temp >= 40 {
-            break;
-        }
-
-        sleep(Duration::from_millis(200)).await;
+        sleep(Duration::from_millis(100)).await;
     }
 
     println!("\n📄 Final state:");
