@@ -101,6 +101,34 @@ set-title <title>           # Set document title
 show                        # Show current state (default)
 ```
 
+## TUI (Terminal User Interface)
+
+The project includes a collaborative notes editor with a terminal UI:
+
+```bash
+cd cli
+cargo run --bin automerge-tui -- automerge:YOUR_DOC_ID
+```
+
+**Features:**
+- Real-time collaborative editing of the `notes` field
+- Multi-line text editing with `tui-textarea`
+- Live sync with browser and other CLI instances
+- Auto-save every 5 seconds
+- Unsaved changes indicator (*)
+- Keyboard shortcuts:
+  - `Ctrl+S` - Manual save
+  - `Ctrl+Q` - Quit (auto-saves on exit)
+
+**How it works:**
+1. Open a document in the browser
+2. Copy the document URL
+3. Run the TUI with that URL
+4. Edit the notes field in the TUI
+5. Watch changes sync to the browser in real-time!
+
+The TUI polls for remote changes every 500ms and syncs local changes through the WebSocket server, just like the browser client.
+
 ## Architecture
 
 ```
