@@ -8,6 +8,7 @@
 #![allow(non_snake_case)]
 
 use anyhow::{Context, Result};
+
 use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
 use clap::{Parser, Subcommand};
 use futures_util::StreamExt;
@@ -73,12 +74,38 @@ enum Command {
 
 #[derive(Debug, Clone, Reconcile, Hydrate)]
 struct TodoItem {
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
     id: String,
-    text: autosurgeon::Text,
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
+    text: String,
     completed: bool,
 }
 
+// Helper function to hydrate String that might be stored as Text object (from JS)
+fn hydrate_string_or_text<D: autosurgeon::ReadDoc>(
+    doc: &D,
+    obj: &automerge::ObjId,
+    prop: autosurgeon::Prop,
+) -> Result<String, autosurgeon::HydrateError> {
+    use automerge::{ObjType, Value};
 
+    match doc.get(obj, &prop)? {
+        Some((Value::Scalar(s), _)) => {
+            Ok(s.to_str()
+                .ok_or_else(|| autosurgeon::HydrateError::unexpected("string", format!("scalar {:?}", s)))?
+                .to_string())
+        }
+        Some((Value::Object(ObjType::Text), text_obj)) => {
+            doc.text(&text_obj).map_err(|e| {
+                autosurgeon::HydrateError::unexpected("text object", format!("error reading text: {}", e))
+            })
+        }
+        Some((val, _)) => {
+            Err(autosurgeon::HydrateError::unexpected("string or text", format!("{:?}", val)))
+        }
+        None => Ok(String::new()),
+    }
+}
 
 // Helper function to hydrate Option<String> that might be stored as Text object (from JS)
 fn hydrate_optional_string_or_text<D: autosurgeon::ReadDoc>(
@@ -88,30 +115,58 @@ fn hydrate_optional_string_or_text<D: autosurgeon::ReadDoc>(
 ) -> Result<Option<String>, autosurgeon::HydrateError> {
     use automerge::{ObjType, Value};
 
-    tracing::debug!("hydrate_optional_string_or_text: prop={:?}", prop);
     match doc.get(obj, &prop)? {
         Some((Value::Scalar(s), _)) => {
-            // Scalar string - direct case
             Ok(Some(s.to_str()
                 .ok_or_else(|| autosurgeon::HydrateError::unexpected("string", format!("scalar {:?}", s)))?
                 .to_string()))
         }
         Some((Value::Object(ObjType::Text), text_obj)) => {
-            // Text object - from JavaScript
             doc.text(&text_obj).map(Some).map_err(|e| {
                 autosurgeon::HydrateError::unexpected("text object", format!("error reading text: {}", e))
             })
         }
         Some((val, _)) => {
-            tracing::error!("hydrate_optional_string_or_text: unexpected value type for prop={:?}, val={:?}", prop, val);
             Err(autosurgeon::HydrateError::unexpected("string or text", format!("{:?}", val)))
         }
-        None => {
-            tracing::debug!("hydrate_optional_string_or_text: prop={:?} is None", prop);
-            Ok(None)
-        }
+        None => Ok(None),
     }
 }
+
+// Helper to hydrate Vec<String> where items might be Text objects
+fn hydrate_string_vec<D: autosurgeon::ReadDoc>(
+    doc: &D,
+    obj: &automerge::ObjId,
+    prop: autosurgeon::Prop,
+) -> Result<Vec<String>, autosurgeon::HydrateError> {
+    use automerge::{ObjType, Value};
+
+    match doc.get(obj, &prop)? {
+        Some((Value::Object(ObjType::List), list_obj)) => {
+            let len = doc.length(&list_obj);
+            let mut result = Vec::with_capacity(len);
+            for i in 0..len {
+                match doc.get(&list_obj, i)? {
+                    Some((Value::Scalar(s), _)) => {
+                        if let Some(text) = s.to_str() {
+                            result.push(text.to_string());
+                        }
+                    }
+                    Some((Value::Object(ObjType::Text), text_obj)) => {
+                        result.push(doc.text(&text_obj)?);
+                    }
+                    _ => {}
+                }
+            }
+            Ok(result)
+        }
+        None => Ok(Vec::new()),
+        _ => Err(autosurgeon::HydrateError::unexpected("list", "not a list".to_string())),
+    }
+}
+
+
+
 
 
 
@@ -130,9 +185,11 @@ struct Doc {
     counter: i64,
     temperature: i64,
     darkMode: bool,
-    notes: autosurgeon::Text,
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
+    notes: String,
     todos: Vec<TodoItem>,
-    tags: Vec<autosurgeon::Text>,
+    #[autosurgeon(hydrate = "hydrate_string_vec")]
+    tags: Vec<String>,
     metadata: Metadata,
 }
 
@@ -147,14 +204,13 @@ impl Doc {
         println!("│ 🌙 Dark Mode: {:<26}│", if self.darkMode { "ON" } else { "OFF" });
 
         // Text
-        let notes_str = self.notes.as_str();
-        if notes_str.is_empty() {
+        if self.notes.is_empty() {
             println!("│ 📝 Notes: (empty){:<23}│", "");
         } else {
-            let preview = if notes_str.len() > 30 {
-                format!("{}...", &notes_str[..27])
+            let preview = if self.notes.len() > 30 {
+                format!("{}...", &self.notes[..27])
             } else {
-                notes_str.to_string()
+                self.notes.clone()
             };
             println!("│ 📝 Notes: {:<28}│", preview);
         }
@@ -228,11 +284,11 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 tracing::debug!("Set dark mode to {}", enabled);
             }
             Command::AddNote { text } => {
-                let current = state.notes.as_str();
+                let current = state.notes.clone();
                 if current.is_empty() {
-                    state.notes = autosurgeon::Text::from(text.as_str());
+                    state.notes = text.clone();
                 } else {
-                    state.notes = autosurgeon::Text::from(format!("{}\n{}", current, text));
+                    state.notes = format!("{}\n{}", current, text);
                 }
                 state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Added note");
@@ -241,7 +297,7 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 let counter = TODO_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
                 let todo = TodoItem {
                     id: format!("{}-{}", chrono::Utc::now().timestamp_millis(), counter),
-                    text: autosurgeon::Text::from(text.as_str()),
+                    text: text.clone(),
                     completed: false,
                 };
                 state.todos.push(todo);
@@ -267,8 +323,8 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 }
             }
             Command::AddTag { tag } => {
-                if !state.tags.iter().any(|t| t.as_str() == tag) {
-                    state.tags.push(autosurgeon::Text::from(tag.as_str()));
+                if !state.tags.iter().any(|t| t == tag) {
+                    state.tags.push(tag.clone());
                     state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                     tracing::debug!("Added tag: {}", tag);
                 } else {
@@ -276,7 +332,7 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 }
             }
             Command::RemoveTag { tag } => {
-                if let Some(pos) = state.tags.iter().position(|t| t.as_str() == tag) {
+                if let Some(pos) = state.tags.iter().position(|t| t == tag) {
                     state.tags.remove(pos);
                     state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                     tracing::debug!("Removed tag: {}", tag);
@@ -447,12 +503,8 @@ async fn main() -> Result<()> {
     }
 
     let doc_data: Doc = doc_handle.with_document(|doc| {
-        tracing::debug!("Attempting to hydrate document...");
         match hydrate(doc) {
-            Ok(data) => {
-                tracing::debug!("Successfully hydrated document");
-                Ok(data)
-            }
+            Ok(data) => Ok(data),
             Err(e) => {
                 tracing::error!("Failed to hydrate document: {:?}", e);
                 Err(anyhow::anyhow!("Failed to hydrate document for display: {:?}", e))

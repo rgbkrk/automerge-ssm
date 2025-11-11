@@ -208,6 +208,64 @@ In practice, Rust's `String` fields via autosurgeon become `ImmutableString`, an
 
 For truly collaborative text, you could use `Text` explicitly in Rust, but `ImmutableString` works for most use cases.
 
+## Known Issue: Cross-Platform Text Field Hydration ⚠️
+
+### Problem Description
+
+While our TypeScript ImmutableString handling works correctly, there's a **Rust-side hydration issue** that surfaces during cross-platform collaboration:
+
+**Symptom**: When a document is modified by the JavaScript frontend and then accessed by the Rust CLI, hydration fails with:
+```
+ERROR automerge_cli: Failed to hydrate document: Unexpected(Text)
+```
+
+**Root Cause**: The `notes` field is defined as `autosurgeon::Text` in Rust, but when JavaScript interacts with the document (even without touching the notes field directly), it can create or modify the internal representation in a way that Rust's `autosurgeon::Text` hydration doesn't handle correctly.
+
+### Current Rust Schema
+
+```rust
+#[derive(Debug, Clone, Default, Reconcile, Hydrate)]
+struct Doc {
+    counter: i64,
+    temperature: i64,
+    darkMode: bool,
+    notes: autosurgeon::Text,  // ← Fails to hydrate after JS interaction
+    todos: Vec<TodoItem>,
+    tags: Vec<autosurgeon::Text>,
+    metadata: Metadata,
+}
+```
+
+### Impact
+
+- ✅ **JavaScript → JavaScript**: Works perfectly
+- ✅ **Rust → JavaScript**: Works perfectly  
+- ✅ **Rust → Rust**: Works perfectly
+- ❌ **JavaScript → Rust**: Hydration fails after JS modifies document
+
+### Workarounds
+
+1. **Use separate documents**: CLI-only docs work fine, browser-only docs work fine
+2. **Avoid JS-modified docs in Rust**: Once a doc is touched by the browser, CLI operations may fail
+3. **Fresh documents only**: CLI works on newly created (by browser) documents before any browser interaction
+
+### Potential Solutions (Not Yet Implemented)
+
+1. **Make Rust hydration more lenient**: Use a custom hydration function similar to `hydrate_optional_string_or_text` for the notes field
+2. **Use String instead of Text in Rust**: Store notes as `String` (becomes `ImmutableString`), losing collaborative text features
+3. **Fix autosurgeon**: May need upstream fix in autosurgeon's Text hydration to handle more cases
+4. **Add type normalization layer**: Pre-process document before hydration to normalize Text representations
+
+### Investigation Needed
+
+The exact sequence that causes the hydration failure:
+1. Browser creates document ✅
+2. Browser modifies any field (counter, dark mode, etc.) ✅
+3. Rust CLI attempts to read document ❌
+4. Hydration fails on `notes: autosurgeon::Text` even if notes is empty
+
+This suggests the issue is not with the notes content, but with how autosurgeon's Text type expects the document structure vs. how JavaScript creates it.
+
 ## Remaining Considerations
 
 ### 1. When to Use `Text` vs `ImmutableString` in Rust
