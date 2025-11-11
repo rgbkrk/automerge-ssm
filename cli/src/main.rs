@@ -451,7 +451,9 @@ async fn main() -> Result<()> {
 
     // Create a repo with in-memory storage
     let repo = samod::Repo::build_tokio()
-        .with_storage(samod::storage::InMemoryStorage::new())
+        .with_storage(
+            samod::storage::TokioFilesystemStorage::new("./autodash-data/")
+            )
         .load()
         .await;
 

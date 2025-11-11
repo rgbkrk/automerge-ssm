@@ -31,3 +31,5 @@ Cargo.lock
 
 # Logs
 *.log
+
+autodash-data
