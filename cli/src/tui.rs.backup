@@ -50,6 +50,7 @@ struct App<'a> {
     status_message: String,
     last_known_text: String,
     should_quit: bool,
+    unsaved_changes: bool,
 }
 
 impl<'a> App<'a> {
@@ -70,18 +71,18 @@ impl<'a> App<'a> {
         textarea.set_block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Notes (Ctrl+Q to quit, Ctrl+S to sync status)"),
+                .title("Notes (Ctrl+Q to quit, Ctrl+S to save)"),
         );
         textarea.set_cursor_line_style(Style::default());
-        textarea
-            .set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
+        textarea.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
 
         Ok(Self {
             textarea,
             doc_handle,
-            status_message: "Connected. Every keystroke syncs!".to_string(),
+            status_message: "Connected. Start editing!".to_string(),
             last_known_text: initial_text,
             should_quit: false,
+            unsaved_changes: false,
         })
     }
 
@@ -91,95 +92,42 @@ impl<'a> App<'a> {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     match key.code {
                         KeyCode::Char('q') => {
+                            if self.unsaved_changes {
+                                self.save_changes()?;
+                            }
                             self.should_quit = true;
                             return Ok(());
                         }
                         KeyCode::Char('s') => {
-                            self.status_message = format!("Synced at {}", chrono::Local::now().format("%H:%M:%S"));
+                            self.save_changes()?;
                             return Ok(());
                         }
                         _ => {}
                     }
                 }
-
-                // Capture text before the edit
-                let old_text = self.textarea.lines().join("\n");
-
-                // Apply the input to the textarea
                 self.textarea.input(Input::from(event));
-
-                // Get new text after the edit
-                let new_text = self.textarea.lines().join("\n");
-
-                // Apply character-level diff to Automerge if text changed
-                if old_text != new_text {
-                    self.apply_text_diff(&old_text, &new_text)?;
-                    self.last_known_text = new_text;
-                }
+                self.unsaved_changes = true;
             }
             _ => {}
         }
         Ok(())
     }
 
-    fn apply_text_diff(&mut self, old_text: &str, new_text: &str) -> Result<()> {
-        // Simple diff algorithm: find common prefix and suffix
-        let old_chars: Vec<char> = old_text.chars().collect();
-        let new_chars: Vec<char> = new_text.chars().collect();
+    fn save_changes(&mut self) -> Result<()> {
+        let current_text = self.textarea.lines().join("\n");
 
-        // Find common prefix length
-        let mut prefix_len = 0;
-        while prefix_len < old_chars.len()
-            && prefix_len < new_chars.len()
-            && old_chars[prefix_len] == new_chars[prefix_len]
-        {
-            prefix_len += 1;
+        if current_text == self.last_known_text {
+            self.status_message = "No changes to save".to_string();
+            self.unsaved_changes = false;
+            return Ok(());
         }
 
-        // Find common suffix length (but don't overlap with prefix)
-        let mut suffix_len = 0;
-        while suffix_len < (old_chars.len() - prefix_len)
-            && suffix_len < (new_chars.len() - prefix_len)
-            && old_chars[old_chars.len() - 1 - suffix_len] == new_chars[new_chars.len() - 1 - suffix_len]
-        {
-            suffix_len += 1;
-        }
-
-        // Calculate the deletion and insertion
-        let delete_start = prefix_len;
-        let delete_count = old_chars.len() - prefix_len - suffix_len;
-        let insert_text: String = new_chars[prefix_len..new_chars.len() - suffix_len].iter().collect();
-
-        // Apply to Automerge document
         self.doc_handle.with_document(|doc| -> Result<()> {
             let mut state: Doc = hydrate(doc)?;
 
-            // Convert character position to byte position for UTF-8 safety
-            let byte_pos = state.notes
-                .char_indices()
-                .nth(delete_start)
-                .map(|(idx, _)| idx)
-                .unwrap_or(state.notes.len());
-
-            // Calculate byte length to delete
-            let delete_byte_len = if delete_count > 0 {
-                state.notes[byte_pos..]
-                    .char_indices()
-                    .nth(delete_count)
-                    .map(|(idx, _)| idx)
-                    .unwrap_or(state.notes[byte_pos..].len())
-            } else {
-                0
-            };
-
-            // Perform the splice: delete then insert
-            if delete_byte_len > 0 {
-                state.notes.drain(byte_pos..byte_pos + delete_byte_len);
-            }
-            if !insert_text.is_empty() {
-                state.notes.insert_str(byte_pos, &insert_text);
-            }
-
+            // Replace entire text
+            // TODO: Use character-level diff for better merging with automerge::splice
+            state.notes = current_text.clone();
             state.metadata.lastModified = Some(Utc::now().timestamp_millis());
 
             doc.transact(|tx| reconcile(tx, &state))
@@ -187,6 +135,9 @@ impl<'a> App<'a> {
             Ok(())
         })?;
 
+        self.last_known_text = current_text;
+        self.unsaved_changes = false;
+        self.status_message = format!("Saved at {}", chrono::Local::now().format("%H:%M:%S"));
         Ok(())
     }
 
@@ -211,7 +162,7 @@ impl<'a> App<'a> {
             self.textarea.set_block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Notes (Ctrl+Q to quit, Ctrl+S to sync status)"),
+                    .title("Notes (Ctrl+Q to quit, Ctrl+S to save)"),
             );
             self.textarea.set_cursor_line_style(Style::default());
             self.textarea
@@ -237,6 +188,7 @@ impl<'a> App<'a> {
             }
 
             self.last_known_text = remote_text;
+            self.unsaved_changes = false;
             self.status_message =
                 format!("Remote update at {}", chrono::Local::now().format("%H:%M:%S"));
         }
@@ -254,9 +206,10 @@ fn ui(f: &mut ratatui::Frame, app: &App) {
     f.render_widget(app.textarea.widget(), chunks[0]);
 
     // Render status bar
+    let status_indicator = if app.unsaved_changes { "*" } else { "" };
     let status_text = vec![Line::from(vec![
         Span::styled(
-            "Status: ",
+            format!("Status{}: ", status_indicator),
             Style::default()
                 .fg(Color::Gray)
                 .add_modifier(Modifier::BOLD),
@@ -425,7 +378,7 @@ async fn main() -> Result<()> {
         }
     });
 
-    // Spawn periodic tick for checking remote changes
+    // Spawn periodic tick for auto-save and checking for remote changes
     let tick_tx = tx.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_millis(500));
@@ -448,8 +401,11 @@ async fn main() -> Result<()> {
                     app.handle_input(evt)?;
                 }
                 AppEvent::Tick => {
-                    // Check for remote changes
+                    // Check for remote changes and auto-save if needed
                     app.apply_remote_changes()?;
+                    if app.unsaved_changes {
+                        app.save_changes()?;
+                    }
                 }
             },
             Ok(None) => break, // Channel closed
