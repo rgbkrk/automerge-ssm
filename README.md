@@ -33,7 +33,13 @@ cd frontend && npm install
 
 # Rust is required for CLI
 # Install from https://rustup.rs
+
+# Optional: Clone vendor submodules (for source exploration only)
+# Not required to build or run the application
+git submodule update --init --recursive
 ```
+
+**Note**: The `vendor/` directory contains Git submodules for Automerge and Autosurgeon source code. These are **optional** and only needed if you want to explore the library implementations. The actual dependencies are fetched from crates.io and npm during build.
 
 ### Running the Stack
 
@@ -282,7 +288,27 @@ cargo run -- automerge:DOC_ID show
 - [Autosurgeon (Rust)](https://docs.rs/autosurgeon)
 - [CRDT Tech](https://crdt.tech)
 - [AGENTS.md](./AGENTS.md) - AI agent development workflow
-- [HANDOFF.md](./HANDOFF.md) - Technical investigation details
+
+## Vendor Directory
+
+The `vendor/` directory contains Git submodules with source code for:
+- [Automerge](https://github.com/automerge/automerge) - Core CRDT library
+- [Autosurgeon](https://github.com/automerge/autosurgeon) - Rust derive macros
+
+**These submodules are optional.** They are included for source code exploration and debugging, but are not required to build or run the application. All dependencies are fetched from:
+- Rust: crates.io
+- JavaScript: npm
+
+To clone submodules (if you want to explore source):
+```bash
+git submodule update --init --recursive
+```
+
+To clone the repo **without** submodules:
+```bash
+git clone https://github.com/your-repo/automerge-ssm.git
+# Submodules won't be downloaded
+```
 
 ## License
 
