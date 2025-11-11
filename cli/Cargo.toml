@@ -3,6 +3,10 @@ name = "automerge-cli"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "automerge_cli"
+path = "src/lib.rs"
+
 [dependencies]
 automerge = "0.7"
 autosurgeon = "0.9"
