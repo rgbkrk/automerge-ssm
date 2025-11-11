@@ -50,6 +50,8 @@ enum Command {
     SetCounter { value: i64 },
     /// Set temperature value (0-40)
     SetTemp { value: i64 },
+    /// Steadily increase temperature (1°C per 0.2s)
+    Heat,
     /// Toggle dark mode
     ToggleDark,
     /// Set dark mode on/off
@@ -253,6 +255,55 @@ impl Doc {
     }
 }
 
+async fn heat_command(doc_handle: &samod::DocHandle) -> Result<()> {
+    println!("\n🔥 Heating... (press Ctrl+C to stop)");
+    println!("Increasing temperature by 1°C every 0.2 seconds\n");
+
+    loop {
+        let current_temp: i64 = doc_handle.with_document(|doc| -> Result<i64> {
+            let data: Doc = hydrate(doc)?;
+            Ok(data.temperature)
+        })?;
+
+        if current_temp >= 40 {
+            println!("🌡️  Maximum temperature reached: 40°C");
+            break;
+        }
+
+        doc_handle.with_document(|doc| -> Result<()> {
+            let mut state: Doc = hydrate(doc)?;
+            state.temperature = (state.temperature + 1).min(40);
+            state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+            doc.transact(|tx| {
+                reconcile(tx, &state)
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to reconcile document: {:?}", e))?;
+            Ok(())
+        })?;
+
+        let new_temp: i64 = doc_handle.with_document(|doc| -> Result<i64> {
+            let data: Doc = hydrate(doc)?;
+            Ok(data.temperature)
+        })?;
+
+        println!("🌡️  Temperature: {}°C", new_temp);
+
+        if new_temp >= 40 {
+            break;
+        }
+
+        sleep(Duration::from_millis(200)).await;
+    }
+
+    println!("\n📄 Final state:");
+    let doc_data: Doc = doc_handle.with_document(|doc| {
+        hydrate(doc).context("Failed to hydrate document")
+    })?;
+    doc_data.display();
+
+    Ok(())
+}
+
 async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Result<()> {
     doc_handle.with_document(|doc| -> Result<()> {
         // Hydrate current state from document
@@ -280,6 +331,10 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 state.temperature = temp;
                 state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Set temperature to {}°C", temp);
+            }
+            Command::Heat => {
+                // Handled specially in heat_command() function
+                tracing::debug!("Heat command - handled separately");
             }
             Command::ToggleDark => {
                 state.darkMode = !state.darkMode;
@@ -551,32 +606,38 @@ async fn main() -> Result<()> {
         "Document not found. Make sure:\n  1. The sync server is running\n  2. The document exists in the browser\n  3. The document ID is correct"
     )?;
 
-    // Display state before changes
-    if !matches!(command, Command::Show) {
-        println!("\n📄 Before:");
-    }
-
-    let doc_data: Doc = doc_handle.with_document(|doc| {
-        match hydrate(doc) {
-            Ok(data) => Ok(data),
-            Err(e) => {
-                tracing::error!("Failed to hydrate document: {:?}", e);
-                Err(anyhow::anyhow!("Failed to hydrate document for display: {:?}", e))
-            }
+    // Special handling for Heat command
+    if matches!(command, Command::Heat) {
+        heat_command(&doc_handle).await?;
+    } else {
+        // Normal command execution
+        // Display state before changes
+        if !matches!(command, Command::Show) {
+            println!("\n📄 Before:");
         }
-    })?;
 
-    doc_data.display();
-
-    // Execute the command
-    if !matches!(command, Command::Show) {
-        execute_command(&doc_handle, &command).await?;
-
-        println!("\n📄 After:");
         let doc_data: Doc = doc_handle.with_document(|doc| {
-            hydrate(doc).context("Failed to hydrate document after command")
+            match hydrate(doc) {
+                Ok(data) => Ok(data),
+                Err(e) => {
+                    tracing::error!("Failed to hydrate document: {:?}", e);
+                    Err(anyhow::anyhow!("Failed to hydrate document for display: {:?}", e))
+                }
+            }
         })?;
+
         doc_data.display();
+
+        // Execute the command
+        if !matches!(command, Command::Show) {
+            execute_command(&doc_handle, &command).await?;
+
+            println!("\n📄 After:");
+            let doc_data: Doc = doc_handle.with_document(|doc| {
+                hydrate(doc).context("Failed to hydrate document after command")
+            })?;
+            doc_data.display();
+        }
     }
 
     // Give time for final messages to flush before disconnecting
