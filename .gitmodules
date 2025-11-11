@@ -4,3 +4,9 @@
 [submodule "vendor/automerge"]
 	path = vendor/automerge
 	url = https://github.com/automerge/automerge.git
+[submodule "vendor/automerge-codemirror"]
+	path = vendor/automerge-codemirror
+	url = https://github.com/automerge/automerge-codemirror.git
+[submodule "vendor/automerge-prosemirror"]
+	path = vendor/automerge-prosemirror
+	url = https://github.com/automerge/automerge-prosemirror.git
