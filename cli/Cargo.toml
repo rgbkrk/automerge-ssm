@@ -7,6 +7,14 @@ edition = "2021"
 name = "automerge_cli"
 path = "src/lib.rs"
 
+[[bin]]
+name = "automerge-cli"
+path = "src/main.rs"
+
+[[bin]]
+name = "automerge-tui"
+path = "src/tui.rs"
+
 [dependencies]
 automerge = "0.7"
 autosurgeon = "0.9"
@@ -22,3 +30,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4.5", features = ["derive"] }
 chrono = "0.4"
+ratatui = "0.29"
+tui-textarea = "0.7"
+crossterm = "0.28"
