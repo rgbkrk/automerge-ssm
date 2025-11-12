@@ -108,6 +108,8 @@ pub struct Doc {
     pub darkMode: bool,
     #[autosurgeon(hydrate = "hydrate_string_or_text")]
     pub notes: String,
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
+    pub code: String,
     #[autosurgeon(hydrate = "hydrate_string_vec")]
     pub tags: Vec<String>,
     pub todos: Vec<TodoItem>,
@@ -134,6 +136,13 @@ impl Doc {
             };
             println!("│ 📝 Notes: {:<28}│", notes_preview);
         }
+        if self.code.is_empty() {
+            println!("│ 💻 Code: (empty){:<23}│", "");
+        } else {
+            let code_lines = self.code.lines().count();
+            let code_chars = self.code.chars().count();
+            println!("│ 💻 Code: {} lines, {} chars{:<11}│", code_lines, code_chars, "");
+        }
         println!("│ ✓  Todos: {:<28}│", self.todos.len());
         println!("│ 🏷️  Tags: {:<29}│", self.tags.len());
         if let Some(title) = &self.metadata.title {
@@ -155,6 +164,81 @@ impl Doc {
             for todo in &self.todos {
                 let status = if todo.completed { "✓" } else { "○" };
                 println!("  {} [{}] {}", status, todo.id, todo.text);
+            }
+        }
+    }
+
+    pub fn display_field(&self, field: &str) {
+        match field.to_lowercase().as_str() {
+            "counter" => {
+                println!("🔢 Counter: {}", self.counter);
+            }
+            "temperature" => {
+                println!("🌡️  Temperature: {}°C", self.temperature);
+            }
+            "darkmode" | "dark_mode" => {
+                println!("🌙 Dark Mode: {}", if self.darkMode { "ON" } else { "OFF" });
+            }
+            "notes" => {
+                println!("📝 Notes:");
+                if self.notes.is_empty() {
+                    println!("  (empty)");
+                } else {
+                    println!("{}", self.notes);
+                }
+            }
+            "code" => {
+                println!("💻 Code:");
+                if self.code.is_empty() {
+                    println!("  (empty)");
+                } else {
+                    println!("{}", self.code);
+                }
+            }
+            "todos" => {
+                println!("✓ Todos ({}):", self.todos.len());
+                if self.todos.is_empty() {
+                    println!("  (none)");
+                } else {
+                    for todo in &self.todos {
+                        let status = if todo.completed { "✓" } else { "○" };
+                        println!("  {} [{}] {}", status, todo.id, todo.text);
+                    }
+                }
+            }
+            "tags" => {
+                println!("🏷️  Tags ({}):", self.tags.len());
+                if self.tags.is_empty() {
+                    println!("  (none)");
+                } else {
+                    println!("  {}", self.tags.join(", "));
+                }
+            }
+            "metadata" => {
+                println!("📄 Metadata:");
+                if let Some(title) = &self.metadata.title {
+                    println!("  Title: {}", title);
+                }
+                if let Some(created) = self.metadata.createdAt {
+                    println!("  Created: {} ({})",
+                        chrono::DateTime::from_timestamp_millis(created)
+                            .map(|dt| dt.to_rfc3339())
+                            .unwrap_or_else(|| "invalid".to_string()),
+                        created
+                    );
+                }
+                if let Some(modified) = self.metadata.lastModified {
+                    println!("  Last Modified: {} ({})",
+                        chrono::DateTime::from_timestamp_millis(modified)
+                            .map(|dt| dt.to_rfc3339())
+                            .unwrap_or_else(|| "invalid".to_string()),
+                        modified
+                    );
+                }
+            }
+            _ => {
+                println!("❌ Unknown field: {}", field);
+                println!("Available fields: counter, temperature, darkMode, notes, code, todos, tags, metadata");
             }
         }
     }
