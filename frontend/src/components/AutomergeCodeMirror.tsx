@@ -5,17 +5,22 @@ import { javascript } from "@codemirror/lang-javascript";
 import { markdown } from "@codemirror/lang-markdown";
 import { DocHandle } from "@automerge/automerge-repo";
 import { automergeSyncPlugin } from "@automerge/automerge-codemirror";
+import { peerCursorField, createCursorSyncPlugin } from "./cursorPlugin";
 
 interface AutomergeCodeMirrorProps {
   docHandle: DocHandle<any>;
   path: string[];
   language?: "javascript" | "markdown" | "plaintext";
+  peerId?: string;
+  peerName?: string;
 }
 
 export function AutomergeCodeMirror({
   docHandle,
   path,
   language = "javascript",
+  peerId,
+  peerName,
 }: AutomergeCodeMirrorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -23,6 +28,17 @@ export function AutomergeCodeMirror({
 
   // Memoize the path array to prevent unnecessary re-renders
   const pathKey = useMemo(() => path.join("."), [path]);
+
+  // Generate or use provided peer ID
+  const localPeerId = useMemo(
+    () => peerId || `peer-${Math.random().toString(36).substr(2, 9)}`,
+    [peerId]
+  );
+
+  const localPeerName = useMemo(
+    () => peerName || `User ${localPeerId.slice(-4)}`,
+    [peerName, localPeerId]
+  );
 
   useEffect(() => {
     if (!editorRef.current || !docHandle || initializedRef.current) return;
@@ -49,6 +65,8 @@ export function AutomergeCodeMirror({
           handle: docHandle,
           path,
         }),
+        peerCursorField,
+        createCursorSyncPlugin(docHandle, localPeerId, localPeerName),
         EditorView.theme({
           "&": {
             height: "100%",
@@ -74,6 +92,12 @@ export function AutomergeCodeMirror({
             color: "hsl(var(--muted-foreground))",
             border: "none",
           },
+          ".cm-remote-cursor": {
+            position: "relative",
+          },
+          ".cm-cursor-label": {
+            zIndex: "10",
+          },
         }),
         EditorView.lineWrapping,
       ],
@@ -94,7 +118,7 @@ export function AutomergeCodeMirror({
       viewRef.current = null;
       initializedRef.current = false;
     };
-  }, [docHandle, pathKey, language]);
+  }, [docHandle, pathKey, language, localPeerId, localPeerName]);
 
   return <div ref={editorRef} className="h-full min-h-[200px]" />;
 }
