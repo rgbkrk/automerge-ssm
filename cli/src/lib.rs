@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use autosurgeon::{Hydrate, Reconcile};
 
 #[derive(Debug, Clone, Reconcile, Hydrate)]
