@@ -60,7 +60,6 @@ function App() {
     if (value === null || value === undefined) return false;
     if (typeof value === "boolean") return value;
     if (typeof value === "object" && "val" in value) {
-      console.log("darkMode is an object:", value);
       return Boolean((value as { val: unknown }).val);
     }
     return false;
@@ -146,10 +145,6 @@ function App() {
   // Sync darkMode state with document class
   useEffect(() => {
     const darkModeValue = getDarkMode(doc?.darkMode);
-    console.log("darkMode sync effect:", {
-      raw: doc?.darkMode,
-      parsed: darkModeValue,
-    });
     if (darkModeValue) {
       document.documentElement.classList.add("dark");
     } else {
