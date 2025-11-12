@@ -108,6 +108,8 @@ pub struct Doc {
     pub darkMode: bool,
     #[autosurgeon(hydrate = "hydrate_string_or_text")]
     pub notes: String,
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
+    pub code: String,
     #[autosurgeon(hydrate = "hydrate_string_vec")]
     pub tags: Vec<String>,
     pub todos: Vec<TodoItem>,
@@ -133,6 +135,13 @@ impl Doc {
                 self.notes.clone()
             };
             println!("│ 📝 Notes: {:<28}│", notes_preview);
+        }
+        if self.code.is_empty() {
+            println!("│ 💻 Code: (empty){:<23}│", "");
+        } else {
+            let code_lines = self.code.lines().count();
+            let code_chars = self.code.chars().count();
+            println!("│ 💻 Code: {} lines, {} chars{:<11}│", code_lines, code_chars, "");
         }
         println!("│ ✓  Todos: {:<28}│", self.todos.len());
         println!("│ 🏷️  Tags: {:<29}│", self.tags.len());
