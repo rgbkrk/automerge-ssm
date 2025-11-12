@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use automerge::transaction::Transactable;
 
 use automerge_cli::*;
 use autosurgeon::{hydrate, reconcile};
@@ -229,6 +228,7 @@ fn ui(f: &mut ratatui::Frame, app: &App) {
         .split(f.area());
 
     // Render textarea
+    #[allow(deprecated)]
     f.render_widget(app.textarea.widget(), chunks[0]);
 
     // Render status bar
