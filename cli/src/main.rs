@@ -209,64 +209,51 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 tracing::debug!("Set dark mode to {}", enabled);
             }
             Command::AddNote { text } => {
-                let current = state.notes.clone();
-                if current.is_empty() {
-                    state.notes = text.clone();
+                if state.notes.as_str().is_empty() {
+                    state.notes.splice(0, 0, text);
                 } else {
-                    state.notes = format!("{}\n{}", current, text);
+                    let len = state.notes.as_str().len();
+                    state.notes.splice(len, 0, &format!("\n{}", text));
                 }
                 state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Added note");
             }
             Command::ClearNotes => {
-                state.notes.clear();
+                let len = state.notes.as_str().len();
+                state.notes.splice(0, len as isize, "");
                 state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Cleared notes");
             }
             Command::SetNotes { text } => {
-                state.notes = text.clone();
+                let len = state.notes.as_str().len();
+                state.notes.splice(0, len as isize, text);
                 state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Set notes to: {}", text);
             }
             Command::InsertNotes { position, text } => {
-                // Convert character position to byte index
-                let byte_pos = state.notes
-                    .char_indices()
-                    .nth(*position)
-                    .map(|(idx, _)| idx)
-                    .unwrap_or(state.notes.len());
-                state.notes.insert_str(byte_pos, text);
+                let char_count = state.notes.as_str().chars().count();
+                let insert_pos = (*position).min(char_count);
+                state.notes.splice(insert_pos, 0, text);
                 state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
-                tracing::debug!("Inserted '{}' at character position {} (byte {})", text, position, byte_pos);
+                tracing::debug!("Inserted '{}' at character position {}", text, insert_pos);
             }
             Command::DeleteNotes { start, length } => {
-                // Convert character positions to byte indices
-                let char_count = state.notes.chars().count();
+                let char_count = state.notes.as_str().chars().count();
                 let start_char = (*start).min(char_count);
-                let end_char = (start_char + length).min(char_count);
+                let delete_length = (*length).min(char_count - start_char);
 
-                if start_char < end_char {
-                    let start_byte = state.notes
-                        .char_indices()
-                        .nth(start_char)
-                        .map(|(idx, _)| idx)
-                        .unwrap_or(state.notes.len());
-                    let end_byte = state.notes
-                        .char_indices()
-                        .nth(end_char)
-                        .map(|(idx, _)| idx)
-                        .unwrap_or(state.notes.len());
-
-                    state.notes.replace_range(start_byte..end_byte, "");
+                if delete_length > 0 {
+                    state.notes.splice(start_char, delete_length as isize, "");
                     state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
-                    tracing::debug!("Deleted {} characters from position {}", end_char - start_char, start_char);
+                    tracing::debug!("Deleted {} characters from position {}", delete_length, start_char);
                 }
             }
             Command::AddTodo { text } => {
                 let counter = TODO_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+                let id_str = format!("{}-{}", chrono::Utc::now().timestamp_millis(), counter);
                 let todo = TodoItem {
-                    id: format!("{}-{}", chrono::Utc::now().timestamp_millis(), counter),
-                    text: text.clone(),
+                    id: autosurgeon::Text::with_value(&id_str),
+                    text: autosurgeon::Text::with_value(text),
                     completed: false,
                 };
                 state.todos.push(todo);
@@ -274,7 +261,7 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 tracing::debug!("Added todo: {}", text);
             }
             Command::ToggleTodo { id } => {
-                if let Some(todo) = state.todos.iter_mut().find(|t| t.id.starts_with(id)) {
+                if let Some(todo) = state.todos.iter_mut().find(|t| t.id.as_str().starts_with(id)) {
                     todo.completed = !todo.completed;
                     state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                     tracing::debug!("Toggled todo {}", id);
@@ -283,7 +270,7 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 }
             }
             Command::DeleteTodo { id } => {
-                if let Some(pos) = state.todos.iter().position(|t| t.id.starts_with(id)) {
+                if let Some(pos) = state.todos.iter().position(|t| t.id.as_str().starts_with(id)) {
                     state.todos.remove(pos);
                     state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                     tracing::debug!("Deleted todo {}", id);
@@ -310,7 +297,7 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 }
             }
             Command::SetTitle { title } => {
-                state.metadata.title = Some(title.clone());
+                state.metadata.title = Some(autosurgeon::Text::with_value(title));
                 state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Set title to: {}", title);
             }
