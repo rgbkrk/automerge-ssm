@@ -19,6 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Minus, Trash2, Copy, Check } from "lucide-react";
+import { AutomergeCodeMirror } from "./components/AutomergeCodeMirror";
 
 interface TodoItem {
   id: ImmutableString | string;
@@ -34,6 +35,7 @@ interface Doc {
 
   // Text type (CRDT)
   notes: ImmutableString | string;
+  code: ImmutableString | string;
 
   // List types
   todos: TodoItem[];
@@ -104,6 +106,7 @@ function App() {
           d.temperature = 20;
           d.darkMode = false;
           d.notes = "";
+          d.code = "// Try collaborative coding!\nfunction hello() {\n  console.log('Hello, Automerge!');\n}\n";
           d.todos = [];
           d.tags = [];
           d.metadata = {
@@ -525,7 +528,27 @@ function App() {
             </CardContent>
           </Card>
 
-          {/* Collaborators (List) */}
+          {/* CodeMirror Editor (automerge-codemirror) */}
+          <Card className="md:col-span-2 lg:col-span-3">
+            <CardHeader>
+              <CardTitle>Collaborative Code Editor</CardTitle>
+              <CardDescription>
+                Powered by automerge-codemirror with syntax highlighting
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {docHandle && (
+                <AutomergeCodeMirror
+                  docHandle={docHandle}
+                  path={["code"]}
+                  language="javascript"
+                />
+              )}
+              <p className="text-xs text-muted-foreground mt-2">
+                Type: <code>string</code> (CRDT Text via automerge-codemirror)
+              </p>
+            </CardContent>
+          </Card>
 
           {/* Metadata (Nested Object) */}
           <Card className="md:col-span-2 lg:col-span-3">
