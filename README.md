@@ -16,6 +16,11 @@ Real-time collaborative CRDT demo showcasing **full cross-platform synchronizati
 - Todo list with add/toggle/delete operations
 - Tag management with array operations
 - Metadata with nested object updates
+- **Jupyter-style collaborative notebooks** with CodeMirror editors
+  - Real-time collaborative editing of code and markdown cells
+  - Execution count tracking
+  - Output storage via external refs (keeps CRDT clean)
+  - Ready for [runtimed](https://github.com/runtimed/runtimed) integration
 
 **💪 Production-Ready Patterns**
 - TypeScript union types for `ImmutableString | string`
@@ -50,12 +55,22 @@ pnpx @automerge/automerge-repo-sync-server
 # Terminal 2: Frontend (will open browser at localhost:5173)
 cd frontend && npm run dev
 
-# Terminal 3: CLI (use document ID from browser URL)
+# Terminal 3: Hokey Kernel (optional - for notebook execution)
+cd cli
+cargo run --bin automerge-kernel -- "http://localhost:5173/#automerge:YOUR_DOC_ID"
+
+# Terminal 4: CLI (optional - for command-line operations)
 cd cli
 cargo run -- automerge:YOUR_DOC_ID show
 ```
 
 Open http://localhost:5173 and watch changes sync between browser and CLI in real-time!
+
+**With the Kernel Running:**
+- Click "Run" on notebook cells in the browser
+- The kernel automatically executes the code and updates outputs
+- Outputs are stored as files in `./cli/outputs/` directory
+- All changes sync in real-time across all connected clients
 
 ## CLI Commands
 
@@ -96,9 +111,21 @@ remove-tag <tag>            # Remove tag from list
 set-title <title>           # Set document title
 ```
 
+### Notebook (Jupyter-style)
+```bash
+add-cell [code|markdown]    # Add a new cell (default: code)
+delete-cell <index>         # Delete cell at index
+set-cell-source <index> <source>  # Update cell source code
+execute-cell <index>        # Execute cell (mock for now)
+show cells                  # Display all notebook cells
+```
+
+**Note**: Notebook execution is currently mocked. See [NOTEBOOK_RUNTIMED.md](./NOTEBOOK_RUNTIMED.md) for integration with [runtimed](https://github.com/runtimed/runtimed) for actual code execution.
+
 ### Display
 ```bash
 show                        # Show current state (default)
+show cells                  # Show notebook cells only
 ```
 
 ## TUI (Terminal User Interface)

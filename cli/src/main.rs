@@ -78,8 +78,22 @@ enum Command {
     RemoveTag { tag: String },
     /// Set document title
     SetTitle { title: String },
+    /// Add a notebook cell (code or markdown)
+    AddCell {
+        #[arg(value_name = "TYPE", default_value = "code")]
+        cell_type: String
+    },
+    /// Delete a notebook cell by index
+    DeleteCell { index: usize },
+    /// Set cell source code
+    SetCellSource {
+        index: usize,
+        source: String
+    },
+    /// Execute a notebook cell (mock)
+    ExecuteCell { index: usize },
     /// Display current document state (default)
-    /// Optional field name to show specific field: code, notes, counter, temperature, darkMode, todos, tags, metadata
+    /// Optional field name to show specific field: code, notes, counter, temperature, darkMode, todos, tags, metadata, cells
     Show { field: Option<String> },
 }
 
@@ -313,6 +327,67 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 state.metadata.title = Some(title.clone());
                 state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Set title to: {}", title);
+            }
+            Command::AddCell { cell_type } => {
+                let now = chrono::Utc::now().timestamp_millis();
+                let cell_id = format!("cell-{}", now);
+                let source = if cell_type == "markdown" {
+                    "# New markdown cell".to_string()
+                } else {
+                    "// New code cell".to_string()
+                };
+                state.cells.push(NotebookCell {
+                    id: cell_id.clone(),
+                    cellType: cell_type.clone(),
+                    source,
+                    executionCount: None,
+                    outputRefs: vec![],
+                });
+                state.notebookMetadata.lastModified = Some(now);
+                tracing::debug!("Added {} cell: {}", cell_type, cell_id);
+                println!("✓ Added {} cell at index {}", cell_type, state.cells.len() - 1);
+            }
+            Command::DeleteCell { index } => {
+                if *index < state.cells.len() {
+                    let cell = state.cells.remove(*index);
+                    state.notebookMetadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+                    tracing::debug!("Deleted cell at index {}: {}", index, cell.id);
+                    println!("✓ Deleted cell at index {}", index);
+                } else {
+                    println!("❌ Cell index {} out of bounds (total: {})", index, state.cells.len());
+                    tracing::warn!("Cell index {} out of bounds (total: {})", index, state.cells.len());
+                }
+            }
+            Command::SetCellSource { index, source } => {
+                if *index < state.cells.len() {
+                    state.cells[*index].source = source.clone();
+                    state.notebookMetadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
+                    tracing::debug!("Set source for cell {}", index);
+                    println!("✓ Updated cell {} source", index);
+                } else {
+                    println!("❌ Cell index {} out of bounds (total: {})", index, state.cells.len());
+                    tracing::warn!("Cell index {} out of bounds (total: {})", index, state.cells.len());
+                }
+            }
+            Command::ExecuteCell { index } => {
+                if *index < state.cells.len() {
+                    let cell = &mut state.cells[*index];
+                    cell.executionCount = Some(cell.executionCount.unwrap_or(0) + 1);
+
+                    // Mock: Add a fake output ref
+                    let now = chrono::Utc::now().timestamp_millis();
+                    let output_id = format!("output-{}", now);
+                    let output_ref = format!("https://artifacts.example.com/{}", output_id);
+                    cell.outputRefs = vec![output_ref.clone()];
+
+                    state.notebookMetadata.lastModified = Some(now);
+                    tracing::debug!("Executed cell {} (count: {:?})", index, cell.executionCount);
+                    println!("✓ Executed cell {} (execution count: {}) - Output ref: {}",
+                             index, cell.executionCount.unwrap(), output_ref);
+                } else {
+                    println!("❌ Cell index {} out of bounds (total: {})", index, state.cells.len());
+                    tracing::warn!("Cell index {} out of bounds (total: {})", index, state.cells.len());
+                }
             }
             Command::Show { .. } => {
                 // No changes needed

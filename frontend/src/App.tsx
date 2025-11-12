@@ -20,11 +20,34 @@ import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Minus, Trash2, Copy, Check } from "lucide-react";
 import { AutomergeCodeMirror } from "./components/AutomergeCodeMirror";
+import { NotebookCell } from "./components/NotebookCell";
 
 interface TodoItem {
   id: ImmutableString | string;
   text: ImmutableString | string;
   completed: boolean;
+}
+
+interface NotebookCell {
+  id: ImmutableString | string;
+  cellType: ImmutableString | string; // "code" or "markdown"
+  source: ImmutableString | string; // CRDT text
+  executionCount: number | null;
+  outputRefs: (ImmutableString | string)[]; // URLs to output artifacts
+}
+
+interface NotebookMetadata {
+  title?: ImmutableString | string;
+  createdAt?: number;
+  lastModified?: number;
+}
+
+// Output interface used by NotebookCell component
+// Kept in App.tsx for shared types
+export interface Output {
+  outputType: "stream" | "display_data" | "execute_result" | "error";
+  data: Record<string, string>;
+  text?: string;
 }
 
 interface Doc {
@@ -47,6 +70,10 @@ interface Doc {
     lastModified?: number;
     title?: ImmutableString | string;
   };
+
+  // Notebook fields
+  cells: NotebookCell[];
+  notebookMetadata: NotebookMetadata;
 }
 
 function App() {
@@ -116,6 +143,28 @@ function App() {
             createdAt: Date.now(),
             lastModified: Date.now(),
             title: "Autodash Demo",
+          };
+          // Initialize notebook
+          d.cells = [
+            {
+              id: `cell-${Date.now()}-1`,
+              cellType: "code",
+              source: "// First code cell\nconsole.log('Hello from notebook!');",
+              executionCount: null,
+              outputRefs: [],
+            },
+            {
+              id: `cell-${Date.now()}-2`,
+              cellType: "markdown",
+              source: "# Welcome to Collaborative Notebooks\n\nThis is a markdown cell. Try editing it!",
+              executionCount: null,
+              outputRefs: [],
+            },
+          ];
+          d.notebookMetadata = {
+            title: "Untitled Notebook",
+            createdAt: Date.now(),
+            lastModified: Date.now(),
           };
         });
         window.location.hash = handle.url;
@@ -268,6 +317,88 @@ function App() {
         d.metadata.lastModified = Date.now();
       }
     });
+  };
+
+  // Notebook functions
+  const addCell = (cellType: "code" | "markdown" = "code") => {
+    if (!docHandle) return;
+    docHandle.change((d: Doc) => {
+      if (!d.cells) d.cells = [];
+      d.cells.push({
+        id: `cell-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        cellType,
+        source: cellType === "code" ? "// New code cell" : "# New markdown cell",
+        executionCount: null,
+        outputRefs: [],
+      });
+      if (!d.notebookMetadata) d.notebookMetadata = {};
+      d.notebookMetadata.lastModified = Date.now();
+    });
+  };
+
+  const deleteCell = (index: number) => {
+    if (!docHandle) return;
+    docHandle.change((d: Doc) => {
+      if (!d.cells || index < 0 || index >= d.cells.length) return;
+      d.cells.splice(index, 1);
+      if (!d.notebookMetadata) d.notebookMetadata = {};
+      d.notebookMetadata.lastModified = Date.now();
+    });
+  };
+
+  const moveCellUp = (index: number) => {
+    if (!docHandle || index <= 0) return;
+    docHandle.change((d: Doc) => {
+      if (!d.cells || index >= d.cells.length) return;
+      const cell = d.cells[index];
+      d.cells.splice(index, 1);
+      d.cells.splice(index - 1, 0, cell);
+      if (!d.notebookMetadata) d.notebookMetadata = {};
+      d.notebookMetadata.lastModified = Date.now();
+    });
+  };
+
+  const moveCellDown = (index: number) => {
+    if (!docHandle) return;
+    docHandle.change((d: Doc) => {
+      if (!d.cells || index < 0 || index >= d.cells.length - 1) return;
+      const cell = d.cells[index];
+      d.cells.splice(index, 1);
+      d.cells.splice(index + 1, 0, cell);
+      if (!d.notebookMetadata) d.notebookMetadata = {};
+      d.notebookMetadata.lastModified = Date.now();
+    });
+  };
+
+  const executeCell = async (index: number) => {
+    if (!docHandle) return;
+
+    // Mock execution - in real implementation, this would:
+    // 1. Send code to runtimed via WebSocket/HTTP
+    // 2. Receive execution result
+    // 3. Store output to artifact service
+    // 4. Add outputRef URL to cell
+
+    docHandle.change((d: Doc) => {
+      if (!d.cells || index < 0 || index >= d.cells.length) return;
+      const cell = d.cells[index];
+
+      // Increment execution count
+      cell.executionCount = (cell.executionCount || 0) + 1;
+
+      // Mock: Add a fake output ref
+      const outputId = `output-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const outputRef = `https://artifacts.example.com/${outputId}`;
+
+      if (!cell.outputRefs) cell.outputRefs = [];
+      cell.outputRefs = [outputRef]; // Replace previous outputs
+
+      if (!d.notebookMetadata) d.notebookMetadata = {};
+      d.notebookMetadata.lastModified = Date.now();
+    });
+
+    // TODO: Integrate with runtimed for actual code execution
+    console.log(`Executed cell ${index}: Mock execution`);
   };
 
   const copyUrl = async () => {
@@ -550,6 +681,57 @@ function App() {
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 Collaborator cursors will appear in color when others are editing
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Notebook Section */}
+          <Card className="md:col-span-2 lg:col-span-3">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Collaborative Notebook</CardTitle>
+                  <CardDescription>
+                    Jupyter-style notebook with real-time collaboration
+                  </CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={() => addCell("code")} variant="outline" size="sm">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Code Cell
+                  </Button>
+                  <Button onClick={() => addCell("markdown")} variant="outline" size="sm">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Markdown Cell
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {docHandle && doc.cells && doc.cells.length > 0 ? (
+                <div className="space-y-4">
+                  {doc.cells.map((cell, index) => (
+                    <NotebookCell
+                      key={toStr(cell.id)}
+                      docHandle={docHandle}
+                      cellIndex={index}
+                      cell={cell}
+                      onExecute={executeCell}
+                      onDelete={deleteCell}
+                      onMoveUp={moveCellUp}
+                      onMoveDown={moveCellDown}
+                      isFirst={index === 0}
+                      isLast={index === doc.cells.length - 1}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>No cells yet. Add a code or markdown cell to get started!</p>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-4">
+                Type: <code>Array&lt;NotebookCell&gt;</code> - Outputs stored as external refs
               </p>
             </CardContent>
           </Card>
