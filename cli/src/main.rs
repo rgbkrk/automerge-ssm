@@ -79,7 +79,8 @@ enum Command {
     /// Set document title
     SetTitle { title: String },
     /// Display current document state (default)
-    Show,
+    /// Optional field name to show specific field: code, notes, counter, temperature, darkMode, todos, tags, metadata
+    Show { field: Option<String> },
 }
 
 
@@ -313,7 +314,7 @@ async fn execute_command(doc_handle: &samod::DocHandle, command: &Command) -> Re
                 state.metadata.lastModified = Some(chrono::Utc::now().timestamp_millis());
                 tracing::debug!("Set title to: {}", title);
             }
-            Command::Show => {
+            Command::Show { .. } => {
                 // No changes needed
             }
         }
@@ -347,7 +348,7 @@ async fn main() -> Result<()> {
         .init();
 
     let doc_url = &cli.doc_url;
-    let command = cli.command.unwrap_or(Command::Show);
+    let command = cli.command.unwrap_or(Command::Show { field: None });
 
     // Parse the automerge URL - accept both plain URLs and browser URLs
     let doc_id_str = if let Some(hash_pos) = doc_url.find("#automerge:") {
@@ -472,11 +473,6 @@ async fn main() -> Result<()> {
         heat_command(&doc_handle).await?;
     } else {
         // Normal command execution
-        // Display state before changes
-        if !matches!(command, Command::Show) {
-            println!("\n📄 Before:");
-        }
-
         let doc_data: Doc = doc_handle.with_document(|doc| {
             match hydrate(doc) {
                 Ok(data) => Ok(data),
@@ -487,10 +483,19 @@ async fn main() -> Result<()> {
             }
         })?;
 
-        doc_data.display();
+        // Handle Show command with optional field
+        if let Command::Show { field } = &command {
+            if let Some(field_name) = field {
+                doc_data.display_field(field_name);
+            } else {
+                doc_data.display();
+            }
+        } else {
+            // Display state before changes for non-Show commands
+            println!("\n📄 Before:");
+            doc_data.display();
 
-        // Execute the command
-        if !matches!(command, Command::Show) {
+            // Execute the command
             execute_command(&doc_handle, &command).await?;
 
             println!("\n📄 After:");
