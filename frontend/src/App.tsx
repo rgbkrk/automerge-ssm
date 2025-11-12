@@ -55,6 +55,7 @@ function App() {
   const [newTodo, setNewTodo] = useState("");
   const [newTag, setNewTag] = useState("");
   const [copied, setCopied] = useState(false);
+  const [peerId, setPeerId] = useState<string>("");
 
   // Helper to safely extract boolean value from darkMode
   // Handles both plain boolean and {val: boolean} object formats
@@ -91,6 +92,9 @@ function App() {
         network: [new BrowserWebSocketClientAdapter("ws://localhost:3030")],
         storage: new IndexedDBStorageAdapter(),
       });
+
+      // Store the peer ID for cursor tracking
+      setPeerId(repo.networkSubsystem.peerId);
 
       const hash = window.location.hash.slice(1);
       let handle;
@@ -537,10 +541,15 @@ function App() {
                   docHandle={docHandle}
                   path={["code"]}
                   language="javascript"
+                  peerId={peerId}
+                  peerName={`User ${peerId.slice(-4)}`}
                 />
               )}
               <p className="text-xs text-muted-foreground mt-2">
                 Type: <code>string</code> (CRDT Text via automerge-codemirror)
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Collaborator cursors will appear in color when others are editing
               </p>
             </CardContent>
           </Card>
