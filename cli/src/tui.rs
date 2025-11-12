@@ -57,7 +57,7 @@ impl<'a> App<'a> {
         // Load initial text from document
         let initial_text = doc_handle.with_document(|doc| -> Result<String> {
             let state: Doc = hydrate(doc)?;
-            Ok(state.notes.clone())
+            Ok(state.notes.as_str().to_string())
         })?;
 
         let lines: Vec<String> = if initial_text.is_empty() {
@@ -154,31 +154,9 @@ impl<'a> App<'a> {
         self.doc_handle.with_document(|doc| -> Result<()> {
             let mut state: Doc = hydrate(doc)?;
 
-            // Convert character position to byte position for UTF-8 safety
-            let byte_pos = state.notes
-                .char_indices()
-                .nth(delete_start)
-                .map(|(idx, _)| idx)
-                .unwrap_or(state.notes.len());
-
-            // Calculate byte length to delete
-            let delete_byte_len = if delete_count > 0 {
-                state.notes[byte_pos..]
-                    .char_indices()
-                    .nth(delete_count)
-                    .map(|(idx, _)| idx)
-                    .unwrap_or(state.notes[byte_pos..].len())
-            } else {
-                0
-            };
-
-            // Perform the splice: delete then insert
-            if delete_byte_len > 0 {
-                state.notes.drain(byte_pos..byte_pos + delete_byte_len);
-            }
-            if !insert_text.is_empty() {
-                state.notes.insert_str(byte_pos, &insert_text);
-            }
+            // Use autosurgeon::Text splice API
+            // First delete, then insert at the same position
+            state.notes.splice(delete_start, delete_count as isize, &insert_text);
 
             state.metadata.lastModified = Some(Utc::now().timestamp_millis());
 
@@ -193,7 +171,7 @@ impl<'a> App<'a> {
     fn apply_remote_changes(&mut self) -> Result<()> {
         let remote_text = self.doc_handle.with_document(|doc| -> Result<String> {
             let state: Doc = hydrate(doc)?;
-            Ok(state.notes.clone())
+            Ok(state.notes.as_str().to_string())
         })?;
 
         if remote_text != self.last_known_text {

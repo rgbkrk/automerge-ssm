@@ -2,45 +2,9 @@ use autosurgeon::{Hydrate, Reconcile};
 
 #[derive(Debug, Clone, Reconcile, Hydrate)]
 pub struct TodoItem {
-    #[autosurgeon(hydrate = "hydrate_string_or_text")]
-    pub id: String,
-    #[autosurgeon(hydrate = "hydrate_string_or_text")]
-    pub text: String,
+    pub id: autosurgeon::Text,
+    pub text: autosurgeon::Text,
     pub completed: bool,
-}
-
-pub fn hydrate_string_or_text<D: autosurgeon::ReadDoc>(
-    doc: &D,
-    obj: &automerge::ObjId,
-    prop: autosurgeon::Prop,
-) -> Result<String, autosurgeon::HydrateError> {
-    use automerge::{ObjType, Value};
-    match doc.get(obj, &prop)? {
-        Some((Value::Scalar(s), _)) => {
-            Ok(s.to_str()
-                .ok_or_else(|| autosurgeon::HydrateError::unexpected("string", format!("scalar {:?}", s)))?
-                .to_string())
-        }
-        Some((Value::Object(ObjType::Text), text_obj)) => Ok(doc.text(&text_obj)?),
-        _ => Ok(String::new()),
-    }
-}
-
-pub fn hydrate_optional_string_or_text<D: autosurgeon::ReadDoc>(
-    doc: &D,
-    obj: &automerge::ObjId,
-    prop: autosurgeon::Prop,
-) -> Result<Option<String>, autosurgeon::HydrateError> {
-    use automerge::{ObjType, Value};
-    match doc.get(obj, &prop)? {
-        Some((Value::Scalar(s), _)) => {
-            Ok(Some(s.to_str()
-                .ok_or_else(|| autosurgeon::HydrateError::unexpected("string", format!("scalar {:?}", s)))?
-                .to_string()))
-        }
-        Some((Value::Object(ObjType::Text), text_obj)) => Ok(Some(doc.text(&text_obj)?)),
-        _ => Ok(None),
-    }
 }
 
 pub fn hydrate_optional_timestamp<D: autosurgeon::ReadDoc>(
@@ -97,8 +61,7 @@ pub struct Metadata {
     pub createdAt: Option<i64>,
     #[autosurgeon(hydrate = "hydrate_optional_timestamp")]
     pub lastModified: Option<i64>,
-    #[autosurgeon(hydrate = "hydrate_optional_string_or_text")]
-    pub title: Option<String>,
+    pub title: Option<autosurgeon::Text>,
 }
 
 #[derive(Debug, Clone, Reconcile, Hydrate)]
@@ -106,10 +69,8 @@ pub struct Doc {
     pub counter: i64,
     pub temperature: i64,
     pub darkMode: bool,
-    #[autosurgeon(hydrate = "hydrate_string_or_text")]
-    pub notes: String,
-    #[autosurgeon(hydrate = "hydrate_string_or_text")]
-    pub code: String,
+    pub notes: autosurgeon::Text,
+    pub code: autosurgeon::Text,
     #[autosurgeon(hydrate = "hydrate_string_vec")]
     pub tags: Vec<String>,
     pub todos: Vec<TodoItem>,
@@ -126,30 +87,33 @@ impl Doc {
             "│ 🌙 Dark Mode: {:<26}│",
             if self.darkMode { "ON" } else { "OFF" }
         );
-        if self.notes.is_empty() {
+        if self.notes.as_str().is_empty() {
             println!("│ 📝 Notes: (empty){:<22}│", "");
         } else {
-            let notes_preview = if self.notes.len() > 30 {
-                format!("{}...", &self.notes[..27])
+            let notes_str = self.notes.as_str();
+            let notes_preview = if notes_str.len() > 30 {
+                format!("{}...", &notes_str[..27])
             } else {
-                self.notes.clone()
+                notes_str.to_string()
             };
             println!("│ 📝 Notes: {:<28}│", notes_preview);
         }
-        if self.code.is_empty() {
+        if self.code.as_str().is_empty() {
             println!("│ 💻 Code: (empty){:<23}│", "");
         } else {
-            let code_lines = self.code.lines().count();
-            let code_chars = self.code.chars().count();
+            let code_str = self.code.as_str();
+            let code_lines = code_str.lines().count();
+            let code_chars = code_str.chars().count();
             println!("│ 💻 Code: {} lines, {} chars{:<11}│", code_lines, code_chars, "");
         }
         println!("│ ✓  Todos: {:<28}│", self.todos.len());
         println!("│ 🏷️  Tags: {:<29}│", self.tags.len());
         if let Some(title) = &self.metadata.title {
-            let title_preview = if title.len() > 30 {
-                format!("{}...", &title[..27])
+            let title_str = title.as_str();
+            let title_preview = if title_str.len() > 30 {
+                format!("{}...", &title_str[..27])
             } else {
-                title.clone()
+                title_str.to_string()
             };
             println!("│ 📄 Title: {:<28}│", title_preview);
         }
@@ -163,7 +127,7 @@ impl Doc {
             println!("\n✓ Todos:");
             for todo in &self.todos {
                 let status = if todo.completed { "✓" } else { "○" };
-                println!("  {} [{}] {}", status, todo.id, todo.text);
+                println!("  {} [{}] {}", status, todo.id.as_str(), todo.text.as_str());
             }
         }
     }
@@ -181,18 +145,18 @@ impl Doc {
             }
             "notes" => {
                 println!("📝 Notes:");
-                if self.notes.is_empty() {
+                if self.notes.as_str().is_empty() {
                     println!("  (empty)");
                 } else {
-                    println!("{}", self.notes);
+                    println!("{}", self.notes.as_str());
                 }
             }
             "code" => {
                 println!("💻 Code:");
-                if self.code.is_empty() {
+                if self.code.as_str().is_empty() {
                     println!("  (empty)");
                 } else {
-                    println!("{}", self.code);
+                    println!("{}", self.code.as_str());
                 }
             }
             "todos" => {
@@ -202,7 +166,7 @@ impl Doc {
                 } else {
                     for todo in &self.todos {
                         let status = if todo.completed { "✓" } else { "○" };
-                        println!("  {} [{}] {}", status, todo.id, todo.text);
+                        println!("  {} [{}] {}", status, todo.id.as_str(), todo.text.as_str());
                     }
                 }
             }
@@ -217,7 +181,7 @@ impl Doc {
             "metadata" => {
                 println!("📄 Metadata:");
                 if let Some(title) = &self.metadata.title {
-                    println!("  Title: {}", title);
+                    println!("  Title: {}", title.as_str());
                 }
                 if let Some(created) = self.metadata.createdAt {
                     println!("  Created: {} ({})",
