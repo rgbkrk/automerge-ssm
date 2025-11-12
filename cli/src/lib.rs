@@ -9,6 +9,29 @@ pub struct TodoItem {
     pub completed: bool,
 }
 
+#[derive(Debug, Clone, Reconcile, Hydrate)]
+pub struct NotebookCell {
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
+    pub id: String,
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
+    pub cellType: String, // "code" or "markdown"
+    #[autosurgeon(hydrate = "hydrate_string_or_text")]
+    pub source: String,
+    pub executionCount: Option<i64>,
+    #[autosurgeon(hydrate = "hydrate_string_vec")]
+    pub outputRefs: Vec<String>, // URLs to external output artifacts
+}
+
+#[derive(Debug, Clone, Reconcile, Hydrate)]
+pub struct NotebookMetadata {
+    #[autosurgeon(hydrate = "hydrate_optional_string_or_text")]
+    pub title: Option<String>,
+    #[autosurgeon(hydrate = "hydrate_optional_timestamp")]
+    pub createdAt: Option<i64>,
+    #[autosurgeon(hydrate = "hydrate_optional_timestamp")]
+    pub lastModified: Option<i64>,
+}
+
 pub fn hydrate_string_or_text<D: autosurgeon::ReadDoc>(
     doc: &D,
     obj: &automerge::ObjId,
@@ -114,6 +137,8 @@ pub struct Doc {
     pub tags: Vec<String>,
     pub todos: Vec<TodoItem>,
     pub metadata: Metadata,
+    pub cells: Vec<NotebookCell>,
+    pub notebookMetadata: NotebookMetadata,
 }
 
 impl Doc {
@@ -145,6 +170,7 @@ impl Doc {
         }
         println!("│ ✓  Todos: {:<28}│", self.todos.len());
         println!("│ 🏷️  Tags: {:<29}│", self.tags.len());
+        println!("│ 📓 Notebook Cells: {:<20}│", self.cells.len());
         if let Some(title) = &self.metadata.title {
             let title_preview = if title.len() > 30 {
                 format!("{}...", &title[..27])
@@ -236,9 +262,34 @@ impl Doc {
                     );
                 }
             }
+            "cells" | "notebook" => {
+                println!("📓 Notebook Cells ({}):", self.cells.len());
+                if self.cells.is_empty() {
+                    println!("  (no cells)");
+                } else {
+                    for (idx, cell) in self.cells.iter().enumerate() {
+                        let cell_type_icon = if cell.cellType == "code" { "💻" } else { "📝" };
+                        let exec_info = if let Some(count) = cell.executionCount {
+                            format!("[{}]", count)
+                        } else {
+                            "[ ]".to_string()
+                        };
+                        let source_preview = if cell.source.len() > 50 {
+                            format!("{}...", &cell.source[..47])
+                        } else {
+                            cell.source.clone()
+                        };
+                        println!("  {} Cell {}: {} {} - {}",
+                            cell_type_icon, idx, exec_info, cell.cellType, source_preview);
+                        if !cell.outputRefs.is_empty() {
+                            println!("    Outputs: {} refs", cell.outputRefs.len());
+                        }
+                    }
+                }
+            }
             _ => {
                 println!("❌ Unknown field: {}", field);
-                println!("Available fields: counter, temperature, darkMode, notes, code, todos, tags, metadata");
+                println!("Available fields: counter, temperature, darkMode, notes, code, todos, tags, metadata, cells");
             }
         }
     }

@@ -35,9 +35,21 @@ export function AutomergeCodeMirror({
       languageExtensions.push(markdown());
     }
 
-    // Get the initial document content
+    // Get the initial document content by traversing the path
     const doc = docHandle.doc();
-    const initialText = doc && path.length > 0 ? (doc as any)[path[0]] || "" : "";
+    let initialText = "";
+    if (doc && path.length > 0) {
+      let current: any = doc;
+      for (const key of path) {
+        if (current && typeof current === "object") {
+          current = current[key];
+        } else {
+          current = undefined;
+          break;
+        }
+      }
+      initialText = current ? String(current) : "";
+    }
 
     // Create editor state
     const startState = EditorState.create({
