@@ -28,34 +28,6 @@ pub fn hydrate_optional_timestamp<D: autosurgeon::ReadDoc>(
     }
 }
 
-pub fn hydrate_string_vec<D: autosurgeon::ReadDoc>(
-    doc: &D,
-    obj: &automerge::ObjId,
-    prop: autosurgeon::Prop,
-) -> Result<Vec<String>, autosurgeon::HydrateError> {
-    use automerge::{ObjType, Value};
-    match doc.get(obj, &prop)? {
-        Some((Value::Object(ObjType::List), list_obj)) => {
-            let length = doc.length(&list_obj);
-            let mut result = Vec::new();
-            for i in 0..length {
-                match doc.get(&list_obj, i)? {
-                    Some((Value::Scalar(s), _)) => {
-                        if let Some(text) = s.to_str() {
-                            result.push(text.to_string());
-                        }
-                    }
-                    Some((Value::Object(ObjType::Text), text_obj)) => {
-                        result.push(doc.text(&text_obj)?);
-                    }
-                    _ => {}
-                }
-            }
-            Ok(result)
-        }
-        _ => Ok(Vec::new()),
-    }
-}
 
 #[derive(Debug, Clone, Reconcile, Hydrate)]
 pub struct Metadata {
@@ -73,7 +45,6 @@ pub struct Doc {
     pub darkMode: bool,
     pub notes: autosurgeon::Text,
     pub code: autosurgeon::Text,
-    #[autosurgeon(hydrate = "hydrate_string_vec")]
     pub tags: Vec<String>,
     pub todos: Vec<TodoItem>,
     pub metadata: Metadata,
