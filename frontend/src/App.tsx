@@ -249,7 +249,8 @@ function App() {
     docHandle.change((d: Doc) => {
       if (!d.tags) d.tags = [];
       if (!d.tags.includes(newTag)) {
-        d.tags.push(newTag);
+        // Use ImmutableString to store as scalar string, not Text object
+        d.tags.push(new ImmutableString(newTag));
         if (!d.metadata) d.metadata = {};
         d.metadata.lastModified = Date.now();
       }
